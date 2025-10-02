@@ -78,18 +78,10 @@
         </details>
       </div>
       <div class="row" style="gap:.5rem;align-items:center">
-        <label class="muted">Music URL (direct .mp3/.ogg/.wav)</label>
-        <input id="musicUrl" type="url" placeholder="https://your-file-host.com/final.mp3" />
-        <label class="muted" style="display:inline-flex;align-items:center;gap:.25rem">
-          <input id="autoPlay" type="checkbox" /> Auto-play on Final
-        </label>
-        <button id="playBtn" class="btn btn-primary" style="padding:.4rem .75rem;font-size:.85rem">Play</button>
-        <button id="pauseBtn" class="btn btn-alt" style="padding:.4rem .75rem;font-size:.85rem">Pause</button>
         <button id="finalBtn" class="btn" style="background:var(--fuchsia700);color:#fff">Final Jeopardy</button>
         <audio id="final-audio" src="JeopardyMusic.mp3" preload="auto" aria-hidden="true"></audio>
       </div>
     </section>
-    <div id="audioStatus" class="status"></div>
   </div>
 
   <!-- Final Jeopardy Modal -->
@@ -151,7 +143,6 @@
 
   const ALLOWED_STATES = new Set(["hidden","clue","response","done"]);
   const nextState = (s)=> s==="hidden"?"clue":(s==="clue"?"response":(s==="response"?"done":"done"));
-  const isDirectAudioUrl = (u)=>/\.(mp3|ogg|wav)(\?.*)?$/i.test(u||"");
   const pickRandomTile = ()=>({ col: Math.floor(Math.random()*BOARD.length), row: Math.floor(Math.random()*BOARD[0].clues.length) });
 
   // State
@@ -167,12 +158,7 @@
   const remainingText = document.getElementById('remainingText');
   const resetBtn = document.getElementById('resetBtn');
   const finalBtn = document.getElementById('finalBtn');
-  const musicUrl = document.getElementById('musicUrl');
-  const autoPlay = document.getElementById('autoPlay');
-  const playBtn = document.getElementById('playBtn');
-  const pauseBtn = document.getElementById('pauseBtn');
   const audio = document.getElementById('final-audio');
-  const audioStatus = document.getElementById('audioStatus');
 
   const modal = document.getElementById('modal');
   const finalToggle = document.getElementById('finalToggle');
@@ -313,7 +299,6 @@
     gameEnded = false;
     showFinal = false;
     finalRevealed = false;
-    audioStatus.textContent = '';
     try{ audio.pause(); audio.currentTime = 0; }catch(e){}
     // Re-render tiles
     BOARD.forEach((col,ci)=>col.clues.forEach((_,ri)=>setTileState(ci,ri,'hidden')));
@@ -321,51 +306,6 @@
   }
 
   const DEFAULT_FINAL_SRC = 'JeopardyMusic.mp3';
-
-  function ensureAudioReady(){
-    const url = musicUrl.value.trim();
-    if(!url){ audioStatus.textContent = 'Add a direct .mp3/.ogg/.wav URL to enable music.'; return false; }
-    if(!isDirectAudioUrl(url)){ audioStatus.textContent = 'This looks like a webpage. Use a direct audio link ending in .mp3, .ogg, or .wav.'; return false; }
-    audioStatus.textContent = '';
-    return true;
-  }
-
-  async function tryPlay(options){
-    if(options instanceof Event) options = {};
-    const {
-      src,
-      skipEnsure = false,
-      statusMessage = 'Playing… (click Pause or Close to stop)',
-      errorMessage = 'Playback blocked or failed. Click \u2018Play\u2019 again or use the audio controls.'
-    } = options || {};
-
-    if(!skipEnsure && !ensureAudioReady()) return false;
-    const url = (src ?? musicUrl.value.trim()).trim();
-    if(!url){
-      audioStatus.textContent = 'Add a direct .mp3/.ogg/.wav URL to enable music.';
-      return false;
-    }
-
-    try{
-      if(audio.src !== url) audio.src = url;
-      audio.loop = true;
-      await audio.play();
-      audioStatus.textContent = statusMessage;
-      return true;
-    }catch(e){
-      audioStatus.textContent = errorMessage;
-      return false;
-    }
-  }
-  function tryPause(){ try{ audio.pause(); audioStatus.textContent = 'Paused'; }catch(e){} }
-
-  function playDefaultFinalTheme(){
-    return tryPlay({
-      src: DEFAULT_FINAL_SRC,
-      skipEnsure: true,
-      statusMessage: 'Playing Final Jeopardy theme…'
-    });
-  }
 
   async function openFinal(){
     gameEnded = true; // disables board via disabled attr set when reaching 'done' only; we prevent clicks by short-circuit
@@ -375,19 +315,19 @@
     finalToggle.setAttribute('aria-pressed','false');
     revealBtn.style.display = '';
     modal.style.display = 'flex';
-    let played = false;
-    if(autoPlay.checked){
-      played = await tryPlay();
-    }
-    if(!played){
-      await playDefaultFinalTheme();
+    try{
+      audio.src = DEFAULT_FINAL_SRC;
+      audio.currentTime = 0;
+      audio.loop = true;
+      await audio.play();
+    }catch(e){
+      console.warn('Final Jeopardy audio playback failed:', e);
     }
   }
   function closeFinal(){
     modal.style.display = 'none';
     showFinal = false;
     try{ audio.pause(); audio.currentTime = 0; }catch(e){}
-    audioStatus.textContent = '';
   }
   function toggleFinal(){
     finalRevealed = !finalRevealed;
@@ -399,8 +339,6 @@
   // Wire up controls
   resetBtn.addEventListener('click', resetBoard);
   finalBtn.addEventListener('click', openFinal);
-  playBtn.addEventListener('click', tryPlay);
-  pauseBtn.addEventListener('click', tryPause);
   closeBtn.addEventListener('click', closeFinal);
   revealBtn.addEventListener('click', ()=>{ if(!finalRevealed) toggleFinal(); });
   finalToggle.addEventListener('click', toggleFinal);
