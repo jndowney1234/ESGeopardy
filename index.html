@@ -86,7 +86,7 @@
         <button id="playBtn" class="btn btn-primary" style="padding:.4rem .75rem;font-size:.85rem">Play</button>
         <button id="pauseBtn" class="btn btn-alt" style="padding:.4rem .75rem;font-size:.85rem">Pause</button>
         <button id="finalBtn" class="btn" style="background:var(--fuchsia700);color:#fff">Final Jeopardy</button>
-        <audio id="final-audio" aria-hidden="true"></audio>
+        <audio id="final-audio" src="JeopardyMusic.mp3" preload="auto" aria-hidden="true"></audio>
       </div>
     </section>
     <div id="audioStatus" class="status"></div>
@@ -320,6 +320,8 @@
     updateRemaining();
   }
 
+  const DEFAULT_FINAL_SRC = 'JeopardyMusic.mp3';
+
   function ensureAudioReady(){
     const url = musicUrl.value.trim();
     if(!url){ audioStatus.textContent = 'Add a direct .mp3/.ogg/.wav URL to enable music.'; return false; }
@@ -328,21 +330,44 @@
     return true;
   }
 
-  async function tryPlay(){
-    if(!ensureAudioReady()) return;
-    const url = musicUrl.value.trim();
+  async function tryPlay(options){
+    if(options instanceof Event) options = {};
+    const {
+      src,
+      skipEnsure = false,
+      statusMessage = 'Playing… (click Pause or Close to stop)',
+      errorMessage = 'Playback blocked or failed. Click \u2018Play\u2019 again or use the audio controls.'
+    } = options || {};
+
+    if(!skipEnsure && !ensureAudioReady()) return false;
+    const url = (src ?? musicUrl.value.trim()).trim();
+    if(!url){
+      audioStatus.textContent = 'Add a direct .mp3/.ogg/.wav URL to enable music.';
+      return false;
+    }
+
     try{
       if(audio.src !== url) audio.src = url;
       audio.loop = true;
       await audio.play();
-      audioStatus.textContent = 'Playing… (click Pause or Close to stop)';
+      audioStatus.textContent = statusMessage;
+      return true;
     }catch(e){
-      audioStatus.textContent = 'Playback blocked or failed. Click \u2018Play\u2019 again or use the audio controls.';
+      audioStatus.textContent = errorMessage;
+      return false;
     }
   }
   function tryPause(){ try{ audio.pause(); audioStatus.textContent = 'Paused'; }catch(e){} }
 
-  function openFinal(){
+  function playDefaultFinalTheme(){
+    return tryPlay({
+      src: DEFAULT_FINAL_SRC,
+      skipEnsure: true,
+      statusMessage: 'Playing Final Jeopardy theme…'
+    });
+  }
+
+  async function openFinal(){
     gameEnded = true; // disables board via disabled attr set when reaching 'done' only; we prevent clicks by short-circuit
     showFinal = true;
     finalRevealed = false;
@@ -350,7 +375,13 @@
     finalToggle.setAttribute('aria-pressed','false');
     revealBtn.style.display = '';
     modal.style.display = 'flex';
-    if(autoPlay.checked) { tryPlay(); }
+    let played = false;
+    if(autoPlay.checked){
+      played = await tryPlay();
+    }
+    if(!played){
+      await playDefaultFinalTheme();
+    }
   }
   function closeFinal(){
     modal.style.display = 'none';
