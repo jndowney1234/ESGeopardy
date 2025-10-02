@@ -40,6 +40,19 @@
 
     .tips summary{cursor:pointer}
 
+    .scoreboard{border:1px solid var(--indigo100);background:var(--indigo50);border-radius:16px;padding:1rem;margin-bottom:1.5rem}
+    .scoreboard-header{display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap}
+    .scoreboard h2{margin:0;font-size:1.25rem}
+    .players{display:flex;flex-wrap:wrap;gap:.75rem;margin-top:.75rem}
+    .player-card{flex:1 1 200px;min-width:200px;background:#fff;border-radius:12px;padding:.75rem;border:1px solid var(--gray200);display:flex;flex-direction:column;gap:.5rem;transition:box-shadow .15s,border-color .15s;position:relative}
+    .player-card:hover{box-shadow:0 4px 12px rgba(0,0,0,.08)}
+    .player-card.buzzed{border-color:var(--blue700);box-shadow:0 0 0 2px rgba(37,99,235,.2)}
+    .player-card input{width:100%;font-weight:600;font-size:1rem;border:1px solid var(--gray300);border-radius:8px;padding:.4rem .5rem}
+    .player-score{font-size:1.5rem;font-weight:700}
+    .player-status{font-size:.8rem}
+    .btn-small{padding:.35rem .75rem;font-size:.9rem}
+    .host-controls button{min-width:120px}
+
     /* Modal */
     .modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--overlay);padding:1rem;z-index:50}
     .card{width:100%;max-width:42rem;background:#fff;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.2);padding:1.25rem}
@@ -62,6 +75,18 @@
         <span id="remainingText" class="muted" style="font-size:.9rem">Remaining tiles: 16</span>
       </div>
     </header>
+
+    <section id="scoreboard" class="scoreboard" aria-label="Contestant scoreboard">
+      <div class="scoreboard-header">
+        <h2>Scoreboard</h2>
+        <div class="host-controls row" style="gap:.5rem;flex-wrap:wrap;justify-content:flex-end">
+          <button id="correctBtn" class="btn btn-primary btn-small" type="button">Mark Correct</button>
+          <button id="incorrectBtn" class="btn btn-alt btn-small" type="button">Mark Incorrect</button>
+        </div>
+      </div>
+      <div id="playersList" class="players"></div>
+      <p id="scoreStatus" class="muted" style="margin-top:.75rem;font-size:.85rem"></p>
+    </section>
 
     <div id="board" class="grid" aria-label="Jeopardy board"></div>
 
@@ -153,6 +178,10 @@
   let showFinal = false;
   let finalRevealed = false;
 
+  const players = Array.from({length:3},(_,i)=>({ name:`Contestant ${i+1}`, score:0, buzzed:false }));
+  let selectedPlayer = null;
+  let activeTile = null;
+
   // DOM refs
   const boardEl = document.getElementById('board');
   const remainingText = document.getElementById('remainingText');
@@ -160,11 +189,171 @@
   const finalBtn = document.getElementById('finalBtn');
   const audio = document.getElementById('final-audio');
 
+  const playersListEl = document.getElementById('playersList');
+  const correctBtn = document.getElementById('correctBtn');
+  const incorrectBtn = document.getElementById('incorrectBtn');
+  const scoreStatusEl = document.getElementById('scoreStatus');
+
   const modal = document.getElementById('modal');
   const finalToggle = document.getElementById('finalToggle');
   const finalContent = document.getElementById('finalContent');
   const revealBtn = document.getElementById('revealBtn');
   const closeBtn = document.getElementById('closeBtn');
+
+  const playerRefs = [];
+
+  const currencyFormatter = new Intl.NumberFormat('en-US',{ style:'currency', currency:'USD', maximumFractionDigits:0 });
+  const formatCurrency = (value)=>currencyFormatter.format(Number(value||0));
+
+  function buildScoreboard(){
+    playersListEl.innerHTML = '';
+    playerRefs.length = 0;
+    players.forEach((player,idx)=>{
+      const card = document.createElement('div');
+      card.className = 'player-card';
+
+      const nameLabel = document.createElement('div');
+      nameLabel.className = 'muted';
+      nameLabel.style.fontSize = '.75rem';
+      nameLabel.textContent = 'Name';
+
+      const nameInput = document.createElement('input');
+      nameInput.type = 'text';
+      nameInput.value = player.name;
+      nameInput.placeholder = `Contestant ${idx+1}`;
+      nameInput.addEventListener('input',(e)=>{
+        players[idx].name = e.target.value;
+        updateHostControls();
+      });
+
+      const scoreLabel = document.createElement('div');
+      scoreLabel.className = 'muted';
+      scoreLabel.style.fontSize = '.75rem';
+      scoreLabel.textContent = 'Score';
+
+      const scoreValue = document.createElement('div');
+      scoreValue.className = 'player-score';
+      scoreValue.textContent = formatCurrency(player.score);
+
+      const statusRow = document.createElement('div');
+      statusRow.className = 'row';
+      statusRow.style.justifyContent = 'space-between';
+      statusRow.style.alignItems = 'center';
+
+      const statusText = document.createElement('div');
+      statusText.className = 'muted player-status';
+
+      const actionBtn = document.createElement('button');
+      actionBtn.type = 'button';
+      actionBtn.className = 'btn btn-alt btn-small';
+      actionBtn.textContent = 'Select';
+      actionBtn.addEventListener('click',(e)=>{
+        e.stopPropagation();
+        selectPlayer(idx);
+      });
+
+      statusRow.appendChild(statusText);
+      statusRow.appendChild(actionBtn);
+
+      card.appendChild(nameLabel);
+      card.appendChild(nameInput);
+      card.appendChild(scoreLabel);
+      card.appendChild(scoreValue);
+      card.appendChild(statusRow);
+
+      card.addEventListener('click',(e)=>{
+        if(e.target===nameInput) return;
+        selectPlayer(idx);
+      });
+
+      playersListEl.appendChild(card);
+      playerRefs[idx] = { card, nameInput, scoreEl: scoreValue, statusEl: statusText, actionBtn };
+    });
+    renderPlayers();
+  }
+
+  function renderPlayers(){
+    players.forEach((player,idx)=>{
+      const ref = playerRefs[idx];
+      if(!ref) return;
+      if(ref.nameInput.value !== player.name){
+        ref.nameInput.value = player.name;
+      }
+      ref.scoreEl.textContent = formatCurrency(player.score);
+      ref.card.classList.toggle('buzzed', !!player.buzzed);
+      ref.statusEl.textContent = player.buzzed ? 'Answering' : 'Waiting';
+      ref.actionBtn.textContent = player.buzzed ? 'Clear' : 'Select';
+    });
+  }
+
+  function updateScore(playerIdx, delta){
+    const player = players[playerIdx];
+    if(!player) return;
+    player.score += delta;
+    renderPlayers();
+  }
+
+  function setActiveTile(colIdx,rowIdx){
+    activeTile = { col:colIdx, row:rowIdx };
+  }
+
+  function clearActiveTile(){
+    activeTile = null;
+  }
+
+  function getActiveTileValue(){
+    if(!activeTile) return 0;
+    return BOARD[activeTile.col].clues[activeTile.row].value;
+  }
+
+  function selectPlayer(idx){
+    if(gameEnded) return;
+    if(selectedPlayer === idx){
+      players[idx].buzzed = false;
+      selectedPlayer = null;
+    } else {
+      players.forEach((p,i)=>{ p.buzzed = i===idx; });
+      selectedPlayer = idx;
+    }
+    renderPlayers();
+    updateHostControls();
+  }
+
+  function clearBuzzes(){
+    players.forEach(p=>{ p.buzzed = false; });
+    selectedPlayer = null;
+    renderPlayers();
+  }
+
+  function updateHostControls(){
+    const tileActive = !!activeTile && states[activeTile.col][activeTile.row] !== 'done';
+    const canScore = tileActive && selectedPlayer !== null && !gameEnded;
+    if(correctBtn) correctBtn.disabled = !canScore;
+    if(incorrectBtn) incorrectBtn.disabled = !canScore;
+    if(scoreStatusEl){
+      if(!activeTile){
+        scoreStatusEl.textContent = 'Select a tile to begin scoring.';
+      } else if(selectedPlayer === null){
+        scoreStatusEl.textContent = `Value: ${formatCurrency(getActiveTileValue())}. Select a contestant to score this tile.`;
+      } else {
+        const name = players[selectedPlayer].name || `Contestant ${selectedPlayer+1}`;
+        scoreStatusEl.textContent = `${name} is answering for ${formatCurrency(getActiveTileValue())}.`;
+      }
+    }
+  }
+
+  function markTileResult(isCorrect){
+    if(!activeTile || selectedPlayer===null) return;
+    const {col,row} = activeTile;
+    if(states[col][row] === 'done') return;
+    const value = BOARD[col].clues[row].value;
+    updateScore(selectedPlayer, isCorrect ? value : -value);
+    setTileState(col,row,'done');
+    updateRemaining();
+    clearActiveTile();
+    clearBuzzes();
+    updateHostControls();
+  }
 
   // Build Board DOM once
   const colEls = [];
@@ -280,16 +469,30 @@
           setFlashing(colIdx,rowIdx,false);
           flashingPos = null;
           setTileState(colIdx,rowIdx,'clue');
+          setActiveTile(colIdx,rowIdx);
+          clearBuzzes();
           updateRemaining();
+          updateHostControls();
         },2000);
         return;
       }
     }
 
     // Regular flow
-    const next = nextState(states[colIdx][rowIdx]);
+    const current = states[colIdx][rowIdx];
+    const next = nextState(current);
     setTileState(colIdx,rowIdx,next);
+    if(next==='clue'){
+      setActiveTile(colIdx,rowIdx);
+      clearBuzzes();
+    } else if(next==='response'){
+      setActiveTile(colIdx,rowIdx);
+    } else if(next==='done'){
+      clearActiveTile();
+      clearBuzzes();
+    }
     updateRemaining();
+    updateHostControls();
   }
 
   function resetBoard(){
@@ -299,10 +502,13 @@
     gameEnded = false;
     showFinal = false;
     finalRevealed = false;
+    clearActiveTile();
+    clearBuzzes();
     try{ audio.pause(); audio.currentTime = 0; }catch(e){}
     // Re-render tiles
     BOARD.forEach((col,ci)=>col.clues.forEach((_,ri)=>setTileState(ci,ri,'hidden')));
     updateRemaining();
+    updateHostControls();
   }
 
   const DEFAULT_FINAL_SRC = 'JeopardyMusic.mp3';
@@ -311,6 +517,9 @@
     gameEnded = true; // disables board via disabled attr set when reaching 'done' only; we prevent clicks by short-circuit
     showFinal = true;
     finalRevealed = false;
+    clearActiveTile();
+    clearBuzzes();
+    updateHostControls();
     finalContent.textContent = FINAL.clue;
     finalToggle.setAttribute('aria-pressed','false');
     revealBtn.style.display = '';
@@ -327,6 +536,9 @@
   function closeFinal(){
     modal.style.display = 'none';
     showFinal = false;
+    clearActiveTile();
+    clearBuzzes();
+    updateHostControls();
     try{ audio.pause(); audio.currentTime = 0; }catch(e){}
   }
   function toggleFinal(){
@@ -339,12 +551,16 @@
   // Wire up controls
   resetBtn.addEventListener('click', resetBoard);
   finalBtn.addEventListener('click', openFinal);
+  if(correctBtn) correctBtn.addEventListener('click', ()=>markTileResult(true));
+  if(incorrectBtn) incorrectBtn.addEventListener('click', ()=>markTileResult(false));
   closeBtn.addEventListener('click', closeFinal);
   revealBtn.addEventListener('click', ()=>{ if(!finalRevealed) toggleFinal(); });
   finalToggle.addEventListener('click', toggleFinal);
   finalToggle.addEventListener('keydown', (e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); toggleFinal(); }});
 
   // Build once and init states
+  buildScoreboard();
+  updateHostControls();
   buildBoard();
   // Initialize each tile explicitly so content matches state
   BOARD.forEach((col,ci)=>col.clues.forEach((_,ri)=>setTileState(ci,ri,'hidden')));
