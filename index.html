@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ESGoepardy — 2024 ESG Edition (Static)</title>
+  <style>
+    :root{
+      --bg:#ffffff;--text:#111827;--muted:#6b7280;--indigo50:#eef2ff;--indigo100:#e0e7ff;
+      --blue700:#1d4ed8;--blue800:#1e40af;--amber200:#fde68a;--amber300:#fcd34d;--emerald100:#d1fae5;--emerald200:#a7f3d0;
+      --gray200:#e5e7eb;--gray300:#d1d5db;--fuchsia700:#a21caf;--overlay:rgba(0,0,0,.5);
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial,"Noto Sans",sans-serif;}
+    .container{max-width:72rem;margin:0 auto;padding:1.5rem}
+    h1{font-size:1.875rem;line-height:2.25rem;margin:0 0 .25rem;font-weight:700}
+    p{margin:.25rem 0}
+    .muted{color:var(--muted)}
+    .row{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
+    .btn{appearance:none;border:0;border-radius:12px;padding:.5rem 1rem;cursor:pointer;font-weight:600}
+    .btn-primary{background:#111827;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.15)}
+    .btn-primary:hover{box-shadow:0 6px 12px rgba(0,0,0,.18)}
+    .btn-alt{background:var(--gray200)}
+    .grid{display:grid;grid-template-columns:1fr;gap:.75rem}
+    @media (min-width:640px){.grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+    .col{display:flex;flex-direction:column;gap:.75rem}
+    .cat{padding:.75rem;text-align:center;border:1px solid var(--indigo100);background:var(--indigo50);border-radius:16px;font-weight:600}
+    .tile{position:relative;min-height:110px;padding:.75rem;border-radius:16px;text-align:center;border:1px solid transparent;transition:.15s;cursor:pointer}
+    .tile.hidden{background:var(--blue700);color:#fff;border-color:var(--blue800)}
+    .tile.hidden:hover{filter:brightness(.95)}
+    .tile.clue{background:var(--amber200);color:#111827;border-color:var(--amber300)}
+    .tile.clue:hover{filter:brightness(.98)}
+    .tile.response{background:var(--emerald100);color:#111827;border-color:var(--emerald200)}
+    .tile.response:hover{filter:brightness(.98)}
+    .tile.done,.tile[disabled]{background:var(--gray200);border-color:var(--gray300);color:#9ca3af;cursor:not-allowed}
+    .value-tag{position:absolute;right:.75rem;bottom:.5rem;opacity:.8;font-size:.875rem}
+    .played{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:.9rem}
+    .flash{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;border-radius:16px;background:rgba(162,28,175,.9);color:#fff;text-align:center;padding:.75rem;animation:pulse 1s infinite}
+    @keyframes pulse{0%{opacity:.95}50%{opacity:.65}100%{opacity:.95}}
+
+    .tips summary{cursor:pointer}
+
+    /* Modal */
+    .modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--overlay);padding:1rem;z-index:50}
+    .card{width:100%;max-width:42rem;background:#fff;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.2);padding:1.25rem}
+    .final-toggle{margin-top:1rem;padding:1rem;border-radius:12px;background:var(--indigo50);border:1px solid var(--indigo100);cursor:pointer;user-select:none}
+
+    input[type="url"]{padding:.25rem .5rem;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem;width:280px}
+    label{font-size:.85rem}
+    .status{margin-top:.5rem;font-size:.8rem;font-style:italic;color:#4b5563}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="row" style="justify-content:space-between;align-items:flex-end;margin-bottom:1rem;">
+      <div>
+        <h1>ESGoepardy — 2024 ESG Edition</h1>
+        <p class="muted">Click once to reveal the <strong>clue</strong>, click again to reveal the <strong>correct response</strong>. After that, the tile is marked as <strong>Played</strong>.</p>
+      </div>
+      <div class="row">
+        <button id="resetBtn" class="btn btn-primary">Reset Board</button>
+        <span id="remainingText" class="muted" style="font-size:.9rem">Remaining tiles: 16</span>
+      </div>
+    </header>
+
+    <div id="board" class="grid" aria-label="Jeopardy board"></div>
+
+    <section class="row" style="justify-content:space-between;margin-top:1.25rem;align-items:flex-start;gap:.75rem">
+      <div class="tips muted" style="font-size:.9rem">
+        <details open>
+          <summary>Host tips</summary>
+          <ul style="margin:.5rem 0 .25rem 1.25rem">
+            <li>Keep pace to ~45s per tile to fit an 8-minute round.</li>
+            <li>Read the <strong>clue</strong> aloud; contestants respond in the form of a question.</li>
+            <li>Skip around categories to keep energy high.</li>
+            <li>Use "Reset Board" to reroll the hidden Double Jeopardy tile.</li>
+          </ul>
+        </details>
+      </div>
+      <div class="row" style="gap:.5rem;align-items:center">
+        <label class="muted">Music URL (direct .mp3/.ogg/.wav)</label>
+        <input id="musicUrl" type="url" placeholder="https://your-file-host.com/final.mp3" />
+        <label class="muted" style="display:inline-flex;align-items:center;gap:.25rem">
+          <input id="autoPlay" type="checkbox" /> Auto-play on Final
+        </label>
+        <button id="playBtn" class="btn btn-primary" style="padding:.4rem .75rem;font-size:.85rem">Play</button>
+        <button id="pauseBtn" class="btn btn-alt" style="padding:.4rem .75rem;font-size:.85rem">Pause</button>
+        <button id="finalBtn" class="btn" style="background:var(--fuchsia700);color:#fff">Final Jeopardy</button>
+        <audio id="final-audio" aria-hidden="true"></audio>
+      </div>
+    </section>
+    <div id="audioStatus" class="status"></div>
+  </div>
+
+  <!-- Final Jeopardy Modal -->
+  <div id="modal" class="modal" style="display:none">
+    <div class="card" role="dialog" aria-labelledby="finalTitle" aria-modal="true">
+      <div style="text-align:center">
+        <div class="muted" style="letter-spacing:.15em;font-size:.8rem">FINAL JEOPARDY</div>
+        <div id="finalTitle" style="margin-top:.25rem;font-weight:600;font-size:1.25rem">ESG Theme</div>
+      </div>
+
+      <div id="finalToggle" class="final-toggle" role="button" tabindex="0" aria-pressed="false" title="Click to reveal response">
+        <p id="finalContent" style="margin:0;font-size:1.125rem;line-height:1.6"></p>
+      </div>
+
+      <div class="row" style="justify-content:flex-end;margin-top:.75rem;gap:.5rem;flex-wrap:wrap">
+        <button id="revealBtn" class="btn btn-primary">Reveal Response</button>
+        <button id="closeBtn" class="btn btn-alt">Close</button>
+      </div>
+
+      <p class="muted" style="margin-top:.5rem;font-size:.8rem">Starting Final Jeopardy ends the game and disables the board. Use <strong>Reset Board</strong> to start a new round.</p>
+    </div>
+  </div>
+
+  <script>
+  // -----------------------------
+  // Board Content (4 x 4)
+  // -----------------------------
+  const BOARD = [
+    { category: "Planet Positive 🌍", clues: [
+      { value:100, clue:"Turner is working toward this long-term environmental goal, common across the construction industry.", response:"What is Net-Zero Emissions?" },
+      { value:200, clue:"This type of material, such as low-carbon concrete or mass timber, is key to reducing embodied carbon.", response:"What are sustainable building materials?" },
+      { value:300, clue:"Turner’s approach to water, waste, and biodiversity shows our commitment to protecting this.", response:"What is the planet (or environment)?" },
+      { value:400, clue:"Electrification of fleets, renewable fuels, and green jobsite innovations are part of this broader strategy.", response:"What is decarbonization?" },
+    ]},
+    { category: "People Power 👥", clues: [
+      { value:100, clue:"Turner’s workplace culture is grounded in this value, which means looking out for one another.", response:"What is Active Caring?" },
+      { value:200, clue:"Expanding family leave, wellness programs, and ERGs are all about supporting this.", response:"What is employee well-being?" },
+      { value:300, clue:"Mentorship, career pathways, and leadership programs help develop this.", response:"What is the next generation of leaders?" },
+      { value:400, clue:"The focus of Construction Inclusion Week, and a key Turner priority, is building a culture of this.", response:"What is inclusion (or belonging)?" },
+    ]},
+    { category: "Community Impact 🤝", clues: [
+      { value:100, clue:"Turner partners with local schools, nonprofits, and trade groups to invest in this.", response:"What is the community (or future workforce)?" },
+      { value:200, clue:"Food drives, volunteer days, and building gardens are examples of this type of impact.", response:"What is community service (or engagement)?" },
+      { value:300, clue:"Programs like ACE Extern and YouthConstruct help young people explore careers in this industry.", response:"What is construction?" },
+      { value:400, clue:"Turner’s partnerships with small and diverse businesses strengthen this aspect of local economies.", response:"What is economic development?" },
+    ]},
+    { category: "Transforming Industry 🏗️", clues: [
+      { value:100, clue:"Turner has a long history of ‘firsts’ — like being a founding member of this green building council.", response:"What is the U.S. Green Building Council?" },
+      { value:200, clue:"Innovation summits, AI pilots, and Turner Ventures all help Turner drive this.", response:"What is industry transformation (or innovation)?" },
+      { value:300, clue:"Transparency, ethics, and ISO certifications demonstrate Turner’s commitment to this.", response:"What is good governance?" },
+      { value:400, clue:"Collaborating with clients, partners, and global affiliates helps Turner do this across the construction industry.", response:"What is lead change (or set industry standards)?" },
+    ]}
+  ];
+
+  const FINAL = {
+    clue: "This is Turner’s guiding vision that connects caring for people, communities, and the planet with building a better future.",
+    response: "What is Building Today to Transform Tomorrow™?",
+  };
+
+  const ALLOWED_STATES = new Set(["hidden","clue","response","done"]);
+  const nextState = (s)=> s==="hidden"?"clue":(s==="clue"?"response":(s==="response"?"done":"done"));
+  const isDirectAudioUrl = (u)=>/\.(mp3|ogg|wav)(\?.*)?$/i.test(u||"");
+  const pickRandomTile = ()=>({ col: Math.floor(Math.random()*BOARD.length), row: Math.floor(Math.random()*BOARD[0].clues.length) });
+
+  // State
+  let states = BOARD.map(col=>col.clues.map(()=>"hidden"));
+  let doublePos = pickRandomTile();
+  let flashingPos = null; // {col,row}
+  let gameEnded = false;
+  let showFinal = false;
+  let finalRevealed = false;
+
+  // DOM refs
+  const boardEl = document.getElementById('board');
+  const remainingText = document.getElementById('remainingText');
+  const resetBtn = document.getElementById('resetBtn');
+  const finalBtn = document.getElementById('finalBtn');
+  const musicUrl = document.getElementById('musicUrl');
+  const autoPlay = document.getElementById('autoPlay');
+  const playBtn = document.getElementById('playBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const audio = document.getElementById('final-audio');
+  const audioStatus = document.getElementById('audioStatus');
+
+  const modal = document.getElementById('modal');
+  const finalToggle = document.getElementById('finalToggle');
+  const finalContent = document.getElementById('finalContent');
+  const revealBtn = document.getElementById('revealBtn');
+  const closeBtn = document.getElementById('closeBtn');
+
+  // Build Board DOM once
+  const colEls = [];
+  const tileBtn = (colIdx,rowIdx)=>document.getElementById(`tile-${colIdx}-${rowIdx}`);
+
+  function buildBoard(){
+    boardEl.innerHTML = '';
+    BOARD.forEach((column, colIdx)=>{
+      const col = document.createElement('div');
+      col.className = 'col';
+      const cat = document.createElement('div');
+      cat.className = 'cat';
+      cat.textContent = column.category;
+      col.appendChild(cat);
+
+      column.clues.forEach((item,rowIdx)=>{
+        const btn = document.createElement('button');
+        btn.id = `tile-${colIdx}-${rowIdx}`;
+        btn.className = 'tile hidden';
+        btn.setAttribute('aria-label', `Reveal ${item.value} clue`);
+        btn.addEventListener('click', ()=>advanceTile(colIdx,rowIdx));
+        const content = document.createElement('span');
+        content.className = 'content';
+        content.style.display = 'block';
+        content.style.fontWeight = '600';
+        content.style.fontSize = '1.125rem';
+        content.style.lineHeight = '1.25';
+        content.textContent = item.value;
+        btn.appendChild(content);
+        const tag = document.createElement('span');
+        tag.className = 'value-tag';
+        tag.textContent = item.value;
+        btn.appendChild(tag);
+        col.appendChild(btn);
+      });
+
+      colEls.push(col);
+      boardEl.appendChild(col);
+    });
+    updateRemaining();
+  }
+
+  function updateRemaining(){
+    const remaining = states.flat().filter(s=>s!=="done").length;
+    remainingText.textContent = `Remaining tiles: ${remaining}`;
+  }
+
+  function setTileState(colIdx,rowIdx,state){
+    states[colIdx][rowIdx] = state;
+    const btn = tileBtn(colIdx,rowIdx);
+    const item = BOARD[colIdx].clues[rowIdx];
+    const content = btn.querySelector('.content');
+    btn.classList.remove('hidden','clue','response','done');
+    btn.classList.add(state);
+
+    if(state==='hidden'){
+      content.textContent = item.value;
+      btn.querySelector('.value-tag').style.display = '';
+      btn.disabled = false;
+      btn.setAttribute('aria-label',`Reveal ${item.value} clue`);
+    } else if(state==='clue'){
+      content.textContent = item.clue;
+      btn.querySelector('.value-tag').style.display = 'none';
+      btn.disabled = false;
+      btn.setAttribute('aria-label','Reveal correct response');
+    } else if(state==='response'){
+      content.textContent = item.response;
+      btn.querySelector('.value-tag').style.display = 'none';
+      btn.disabled = false;
+      btn.setAttribute('aria-label','Played');
+    } else { // done
+      content.innerHTML = '<span class="played">Played</span>';
+      btn.querySelector('.value-tag').style.display = 'none';
+      btn.disabled = true;
+      btn.setAttribute('aria-label','Played');
+    }
+  }
+
+  function isFlashingAt(colIdx,rowIdx){
+    return !!flashingPos && flashingPos.col===colIdx && flashingPos.row===rowIdx;
+  }
+
+  function setFlashing(colIdx,rowIdx,enable){
+    const btn = tileBtn(colIdx,rowIdx);
+    if(enable){
+      const overlay = document.createElement('div');
+      overlay.className = 'flash';
+      overlay.innerHTML = '<div><div style="font-size:.75rem;letter-spacing:.25em">DOUBLE</div><div style="font-weight:800;font-size:1.5rem;line-height:1">JEOPARDY!</div></div>';
+      overlay.dataset.flash = '1';
+      btn.appendChild(overlay);
+      btn.disabled = true;
+    } else {
+      const overlay = btn.querySelector('.flash');
+      if(overlay) overlay.remove();
+      btn.disabled = false;
+    }
+  }
+
+  function isDoubleAt(colIdx,rowIdx){
+    return doublePos && doublePos.col===colIdx && doublePos.row===rowIdx;
+  }
+
+  function advanceTile(colIdx,rowIdx){
+    if(gameEnded) return;
+
+    // Double Jeopardy behaviour
+    if(isDoubleAt(colIdx,rowIdx)){
+      const current = states[colIdx][rowIdx];
+      if(current==='hidden'){
+        flashingPos = {col:colIdx,row:rowIdx};
+        setFlashing(colIdx,rowIdx,true);
+        setTimeout(()=>{
+          setFlashing(colIdx,rowIdx,false);
+          flashingPos = null;
+          setTileState(colIdx,rowIdx,'clue');
+          updateRemaining();
+        },2000);
+        return;
+      }
+    }
+
+    // Regular flow
+    const next = nextState(states[colIdx][rowIdx]);
+    setTileState(colIdx,rowIdx,next);
+    updateRemaining();
+  }
+
+  function resetBoard(){
+    states = BOARD.map(col=>col.clues.map(()=>"hidden"));
+    flashingPos = null;
+    doublePos = pickRandomTile();
+    gameEnded = false;
+    showFinal = false;
+    finalRevealed = false;
+    audioStatus.textContent = '';
+    try{ audio.pause(); audio.currentTime = 0; }catch(e){}
+    // Re-render tiles
+    BOARD.forEach((col,ci)=>col.clues.forEach((_,ri)=>setTileState(ci,ri,'hidden')));
+    updateRemaining();
+  }
+
+  function ensureAudioReady(){
+    const url = musicUrl.value.trim();
+    if(!url){ audioStatus.textContent = 'Add a direct .mp3/.ogg/.wav URL to enable music.'; return false; }
+    if(!isDirectAudioUrl(url)){ audioStatus.textContent = 'This looks like a webpage. Use a direct audio link ending in .mp3, .ogg, or .wav.'; return false; }
+    audioStatus.textContent = '';
+    return true;
+  }
+
+  async function tryPlay(){
+    if(!ensureAudioReady()) return;
+    const url = musicUrl.value.trim();
+    try{
+      if(audio.src !== url) audio.src = url;
+      audio.loop = true;
+      await audio.play();
+      audioStatus.textContent = 'Playing… (click Pause or Close to stop)';
+    }catch(e){
+      audioStatus.textContent = 'Playback blocked or failed. Click \u2018Play\u2019 again or use the audio controls.';
+    }
+  }
+  function tryPause(){ try{ audio.pause(); audioStatus.textContent = 'Paused'; }catch(e){} }
+
+  function openFinal(){
+    gameEnded = true; // disables board via disabled attr set when reaching 'done' only; we prevent clicks by short-circuit
+    showFinal = true;
+    finalRevealed = false;
+    finalContent.textContent = FINAL.clue;
+    finalToggle.setAttribute('aria-pressed','false');
+    revealBtn.style.display = '';
+    modal.style.display = 'flex';
+    if(autoPlay.checked) { tryPlay(); }
+  }
+  function closeFinal(){
+    modal.style.display = 'none';
+    showFinal = false;
+    try{ audio.pause(); audio.currentTime = 0; }catch(e){}
+    audioStatus.textContent = '';
+  }
+  function toggleFinal(){
+    finalRevealed = !finalRevealed;
+    finalContent.textContent = finalRevealed ? FINAL.response : FINAL.clue;
+    finalToggle.setAttribute('aria-pressed', String(finalRevealed));
+    revealBtn.style.display = finalRevealed ? 'none' : '';
+  }
+
+  // Wire up controls
+  resetBtn.addEventListener('click', resetBoard);
+  finalBtn.addEventListener('click', openFinal);
+  playBtn.addEventListener('click', tryPlay);
+  pauseBtn.addEventListener('click', tryPause);
+  closeBtn.addEventListener('click', closeFinal);
+  revealBtn.addEventListener('click', ()=>{ if(!finalRevealed) toggleFinal(); });
+  finalToggle.addEventListener('click', toggleFinal);
+  finalToggle.addEventListener('keydown', (e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); toggleFinal(); }});
+
+  // Build once and init states
+  buildBoard();
+  // Initialize each tile explicitly so content matches state
+  BOARD.forEach((col,ci)=>col.clues.forEach((_,ri)=>setTileState(ci,ri,'hidden')));
+
+  // Minimal runtime assertions in console (dev aid)
+  try{
+    console.assert(Array.isArray(BOARD)&&BOARD.length===4,'[TEST] Expected 4 categories');
+    BOARD.forEach((c,i)=>{ console.assert(Array.isArray(c.clues)&&c.clues.length===4,`[TEST] Expected 4 clues in column ${i}`); });
+    console.assert(ALLOWED_STATES.has(states[0][0]), '[TEST] Valid state');
+  }catch(e){ console.warn('[TEST] Runtime assertions raised:',e); }
+  </script>
+</body>
+</html>
