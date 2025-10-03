@@ -48,6 +48,31 @@
     input[type="url"]{padding:.25rem .5rem;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem;width:280px}
     label{font-size:.85rem}
     .status{margin-top:.5rem;font-size:.8rem;font-style:italic;color:#4b5563}
+    .control-panel{display:grid;gap:1rem;margin-top:1.5rem}
+    @media (min-width:768px){.control-panel{grid-template-columns:2fr 3fr}}
+    .panel{padding:1rem;border-radius:16px;border:1px solid var(--indigo100);background:var(--indigo50)}
+    .panel h2{margin:0 0 .5rem;font-size:1.125rem}
+    .contestant-list{display:grid;gap:.5rem}
+    .contestant{display:flex;justify-content:space-between;align-items:center;padding:.75rem 1rem;border-radius:12px;background:#fff;border:1px solid var(--gray200);box-shadow:0 1px 2px rgba(15,23,42,.08);transition:.15s}
+    .contestant.active{border-color:var(--amber300);box-shadow:0 4px 10px rgba(252,211,77,.35);background:var(--amber200)}
+    .contestant-name{font-weight:600}
+    .contestant-score{font-variant-numeric:tabular-nums;font-weight:600}
+    .buzzer-grid{display:flex;flex-wrap:wrap;gap:.5rem}
+    .buzzer-btn{background:#fff;color:var(--text);border:1px solid var(--gray300);box-shadow:0 1px 2px rgba(15,23,42,.08)}
+    .buzzer-btn:disabled{opacity:.55;cursor:not-allowed}
+    .buzzer-note{margin-top:.25rem;font-size:.8rem;color:var(--muted)}
+    .buzzer-status{margin-top:.5rem;font-size:.85rem;font-weight:600}
+    .buzzer-indicator{margin-top:.5rem;font-size:1rem;font-weight:600;padding:.5rem .75rem;border-radius:12px;display:none}
+    .buzzer-indicator[data-tone="ready"]{display:block;background:var(--emerald100);color:#065f46}
+    .buzzer-indicator[data-tone="active"]{display:block;background:var(--amber200);color:#78350f}
+    .buzzer-indicator[data-tone="success"]{display:block;background:var(--emerald100);color:#065f46}
+    .buzzer-indicator[data-tone="warn"]{display:block;background:#fee2e2;color:#991b1b}
+    .buzzer-indicator[data-tone="info"]{display:block;background:#e0e7ff;color:var(--blue800)}
+    .host-controls{margin-top:.75rem;padding:.75rem;border-radius:12px;background:#fff;border:1px dashed var(--gray300)}
+    .host-controls h3{margin:0 0 .5rem;font-size:1rem}
+    .host-controls .btn{min-width:6.5rem}
+    .host-controls .btn:disabled{opacity:.5;cursor:not-allowed}
+    .host-controls.active{border-style:solid;border-color:var(--amber300);box-shadow:0 0 0 2px rgba(252,211,77,.35)}
   </style>
 </head>
 <body>
@@ -64,6 +89,28 @@
     </header>
 
     <div id="board" class="grid" aria-label="Jeopardy board"></div>
+
+    <section class="control-panel" aria-label="Scoreboard and buzzer controls">
+      <div class="panel">
+        <h2>Contestants</h2>
+        <div id="scoreboardList" class="contestant-list" aria-live="polite"></div>
+      </div>
+      <div class="panel">
+        <h2>Buzzers</h2>
+        <p class="buzzer-note">Use the buttons below or press keys <strong>1</strong>, <strong>2</strong>, and <strong>3</strong> to buzz for Contestants 1–3.</p>
+        <div id="buzzerControls" class="buzzer-grid"></div>
+        <div id="buzzerStatus" class="buzzer-status" aria-live="polite">Buzzers locked</div>
+        <div id="buzzerIndicator" class="buzzer-indicator" aria-live="assertive"></div>
+        <div id="hostControls" class="host-controls">
+          <h3>Host Controls</h3>
+          <div class="row" style="flex-wrap:wrap;gap:.5rem">
+            <button id="markCorrect" class="btn btn-primary" disabled>Correct</button>
+            <button id="markIncorrect" class="btn btn-alt" disabled>Incorrect</button>
+            <button id="clearBuzz" class="btn btn-alt" disabled>Clear Buzz</button>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <section class="row" style="justify-content:space-between;margin-top:1.25rem;align-items:flex-start;gap:.75rem">
       <div class="tips muted" style="font-size:.9rem">
@@ -145,6 +192,12 @@
   const nextState = (s)=> s==="hidden"?"clue":(s==="clue"?"response":(s==="response"?"done":"done"));
   const pickRandomTile = ()=>({ col: Math.floor(Math.random()*BOARD.length), row: Math.floor(Math.random()*BOARD[0].clues.length) });
 
+  const CONTESTANTS = [
+    { id: 'contestant-1', name: 'Contestant 1', key: '1', score: 0 },
+    { id: 'contestant-2', name: 'Contestant 2', key: '2', score: 0 },
+    { id: 'contestant-3', name: 'Contestant 3', key: '3', score: 0 },
+  ];
+
   // State
   let states = BOARD.map(col=>col.clues.map(()=>"hidden"));
   let doublePos = pickRandomTile();
@@ -152,6 +205,9 @@
   let gameEnded = false;
   let showFinal = false;
   let finalRevealed = false;
+  let activeTile = null; // {col,row}
+  let buzzersEnabled = false;
+  let currentResponder = null;
 
   // DOM refs
   const boardEl = document.getElementById('board');
@@ -165,6 +221,193 @@
   const finalContent = document.getElementById('finalContent');
   const revealBtn = document.getElementById('revealBtn');
   const closeBtn = document.getElementById('closeBtn');
+  const scoreboardList = document.getElementById('scoreboardList');
+  const buzzerControls = document.getElementById('buzzerControls');
+  const buzzerStatus = document.getElementById('buzzerStatus');
+  const buzzerIndicator = document.getElementById('buzzerIndicator');
+  const hostControls = document.getElementById('hostControls');
+  const markCorrectBtn = document.getElementById('markCorrect');
+  const markIncorrectBtn = document.getElementById('markIncorrect');
+  const clearBuzzBtn = document.getElementById('clearBuzz');
+
+  const contestantEls = new Map();
+  const scoreEls = new Map();
+  const buzzerBtnEls = new Map();
+  const keyToContestant = new Map();
+
+  function formatScore(value){
+    try{
+      return new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(value);
+    }catch(_){
+      return `$${value}`;
+    }
+  }
+
+  function setIndicator(message,tone='info'){
+    if(!message){
+      buzzerIndicator.textContent = '';
+      buzzerIndicator.removeAttribute('data-tone');
+      buzzerIndicator.style.display = 'none';
+      return;
+    }
+    buzzerIndicator.textContent = message;
+    buzzerIndicator.dataset.tone = tone;
+    buzzerIndicator.style.display = 'block';
+  }
+
+  function updateHostControls(){
+    const hasResponder = !!currentResponder;
+    [markCorrectBtn,markIncorrectBtn,clearBuzzBtn].forEach(btn=>{ if(btn) btn.disabled = !hasResponder; });
+    if(hostControls) hostControls.classList.toggle('active', hasResponder);
+  }
+
+  function updateContestantDisplay(){
+    CONTESTANTS.forEach(contestant=>{
+      const row = contestantEls.get(contestant.id);
+      const scoreEl = scoreEls.get(contestant.id);
+      if(scoreEl) scoreEl.textContent = formatScore(contestant.score);
+      if(row) row.classList.toggle('active', !!currentResponder && currentResponder.id===contestant.id);
+    });
+  }
+
+  function disableBuzzers(message='Buzzers locked'){
+    buzzersEnabled = false;
+    buzzerBtnEls.forEach(btn=>{ btn.disabled = true; });
+    buzzerStatus.textContent = message;
+  }
+
+  function enableBuzzers(message='Buzzers ready (keys 1-3)'){
+    if(gameEnded || !activeTile) return;
+    buzzersEnabled = true;
+    buzzerBtnEls.forEach(btn=>{ btn.disabled = false; });
+    buzzerStatus.textContent = message;
+  }
+
+  function resetBuzzerSystem(){
+    activeTile = null;
+    currentResponder = null;
+    disableBuzzers('Buzzers locked');
+    setIndicator('');
+    updateContestantDisplay();
+    updateHostControls();
+  }
+
+  function prepareBuzzersForClue(){
+    if(!activeTile || gameEnded) return;
+    currentResponder = null;
+    updateContestantDisplay();
+    updateHostControls();
+    enableBuzzers();
+    setIndicator('Buzzers open. Awaiting a contestant.', 'ready');
+  }
+
+  function handleBuzzerStateForTile(colIdx,rowIdx,state){
+    if(state==='clue'){
+      activeTile = {col:colIdx,row:rowIdx};
+      prepareBuzzersForClue();
+      return;
+    }
+
+    if(!activeTile || activeTile.col!==colIdx || activeTile.row!==rowIdx) return;
+
+    if(state==='hidden'){
+      resetBuzzerSystem();
+    } else if(state==='response'){
+      disableBuzzers('Buzzers locked');
+      if(!currentResponder) setIndicator('Clue resolved.', 'info');
+      currentResponder = null;
+      updateContestantDisplay();
+      updateHostControls();
+    } else if(state==='done'){
+      activeTile = null;
+    }
+  }
+
+  function buildContestantUI(){
+    contestantEls.clear();
+    scoreEls.clear();
+    buzzerBtnEls.clear();
+    keyToContestant.clear();
+    scoreboardList.innerHTML = '';
+    buzzerControls.innerHTML = '';
+
+    CONTESTANTS.forEach(contestant=>{
+      const row = document.createElement('div');
+      row.className = 'contestant';
+      row.dataset.contestantId = contestant.id;
+      const nameEl = document.createElement('span');
+      nameEl.className = 'contestant-name';
+      nameEl.textContent = contestant.name;
+      const scoreEl = document.createElement('span');
+      scoreEl.className = 'contestant-score';
+      scoreEl.textContent = formatScore(contestant.score);
+      row.appendChild(nameEl);
+      row.appendChild(scoreEl);
+      scoreboardList.appendChild(row);
+      contestantEls.set(contestant.id,row);
+      scoreEls.set(contestant.id,scoreEl);
+
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn buzzer-btn';
+      button.textContent = `${contestant.name} (${contestant.key})`;
+      button.setAttribute('aria-label', `Buzz for ${contestant.name} (key ${contestant.key})`);
+      button.addEventListener('click', ()=>handleBuzz(contestant));
+      buzzerControls.appendChild(button);
+      buzzerBtnEls.set(contestant.id,button);
+
+      keyToContestant.set(contestant.key,contestant);
+      keyToContestant.set(String(contestant.key).toLowerCase(),contestant);
+      keyToContestant.set(String(contestant.key).toUpperCase(),contestant);
+    });
+
+    disableBuzzers('Buzzers locked');
+    setIndicator('');
+    updateHostControls();
+  }
+
+  function handleBuzz(contestant){
+    if(gameEnded || !buzzersEnabled || currentResponder || !activeTile) return;
+    currentResponder = contestant;
+    disableBuzzers('Buzzers locked');
+    updateContestantDisplay();
+    updateHostControls();
+    setIndicator(`${contestant.name} buzzed in!`, 'active');
+  }
+
+  function handleCorrect(){
+    if(!currentResponder || !activeTile) return;
+    const contestant = currentResponder;
+    const value = BOARD[activeTile.col].clues[activeTile.row].value || 0;
+    contestant.score += value;
+    updateContestantDisplay();
+    setTileState(activeTile.col,activeTile.row,'response');
+    setTileState(activeTile.col,activeTile.row,'done');
+    updateRemaining();
+    setIndicator(`${contestant.name} is correct!`, 'success');
+  }
+
+  function handleIncorrect(){
+    if(!currentResponder || !activeTile) return;
+    const contestant = currentResponder;
+    const value = BOARD[activeTile.col].clues[activeTile.row].value || 0;
+    contestant.score -= value;
+    currentResponder = null;
+    updateContestantDisplay();
+    updateHostControls();
+    enableBuzzers('Buzzers reopened');
+    setIndicator(`${contestant.name} is incorrect. Buzzers reopened.`, 'warn');
+  }
+
+  function handleClear(){
+    if(!currentResponder || !activeTile) return;
+    const name = currentResponder.name;
+    currentResponder = null;
+    updateContestantDisplay();
+    updateHostControls();
+    enableBuzzers('Buzzers reopened');
+    setIndicator(`Buzz cleared for ${name}. Awaiting buzz.`, 'info');
+  }
 
   // Build Board DOM once
   const colEls = [];
@@ -241,6 +484,8 @@
       btn.disabled = true;
       btn.setAttribute('aria-label','Played');
     }
+
+    handleBuzzerStateForTile(colIdx,rowIdx,state);
   }
 
   function isFlashingAt(colIdx,rowIdx){
@@ -299,9 +544,12 @@
     gameEnded = false;
     showFinal = false;
     finalRevealed = false;
+    CONTESTANTS.forEach(contestant=>{ contestant.score = 0; });
+    resetBuzzerSystem();
     try{ audio.pause(); audio.currentTime = 0; }catch(e){}
     // Re-render tiles
     BOARD.forEach((col,ci)=>col.clues.forEach((_,ri)=>setTileState(ci,ri,'hidden')));
+    updateContestantDisplay();
     updateRemaining();
   }
 
@@ -311,6 +559,8 @@
     gameEnded = true; // disables board via disabled attr set when reaching 'done' only; we prevent clicks by short-circuit
     showFinal = true;
     finalRevealed = false;
+    resetBuzzerSystem();
+    setIndicator('Final Jeopardy in progress. Buzzers disabled.', 'info');
     finalContent.textContent = FINAL.clue;
     finalToggle.setAttribute('aria-pressed','false');
     revealBtn.style.display = '';
@@ -343,8 +593,22 @@
   revealBtn.addEventListener('click', ()=>{ if(!finalRevealed) toggleFinal(); });
   finalToggle.addEventListener('click', toggleFinal);
   finalToggle.addEventListener('keydown', (e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); toggleFinal(); }});
+  markCorrectBtn.addEventListener('click', handleCorrect);
+  markIncorrectBtn.addEventListener('click', handleIncorrect);
+  clearBuzzBtn.addEventListener('click', handleClear);
+
+  document.addEventListener('keydown',(event)=>{
+    if(event.repeat) return;
+    const activeTag = (document.activeElement && document.activeElement.tagName) ? document.activeElement.tagName.toUpperCase() : '';
+    if(activeTag==='INPUT' || activeTag==='TEXTAREA') return;
+    const contestant = keyToContestant.get(event.key);
+    if(!contestant) return;
+    event.preventDefault();
+    handleBuzz(contestant);
+  });
 
   // Build once and init states
+  buildContestantUI();
   buildBoard();
   // Initialize each tile explicitly so content matches state
   BOARD.forEach((col,ci)=>col.clues.forEach((_,ri)=>setTileState(ci,ri,'hidden')));
