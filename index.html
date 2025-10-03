@@ -73,6 +73,11 @@
     .host-controls .btn{min-width:6.5rem}
     .host-controls .btn:disabled{opacity:.5;cursor:not-allowed}
     .host-controls.active{border-style:solid;border-color:var(--amber300);box-shadow:0 0 0 2px rgba(252,211,77,.35)}
+    body.role-contestant [data-role="host-only"]{display:none !important}
+    .host-answer{margin-top:.75rem;padding:.75rem;border-radius:12px;background:#fff;border:1px dashed var(--gray300);display:flex;flex-direction:column;gap:.25rem}
+    .host-answer h3{margin:0;font-size:1rem}
+    .host-answer p{margin:0;font-size:.9rem}
+    .host-answer[data-state="active"]{border-style:solid;border-color:var(--blue700);box-shadow:0 0 0 2px rgba(29,78,216,.25)}
   </style>
 </head>
 <body>
@@ -101,19 +106,25 @@
         <div id="buzzerControls" class="buzzer-grid"></div>
         <div id="buzzerStatus" class="buzzer-status" aria-live="polite">Buzzers locked</div>
         <div id="buzzerIndicator" class="buzzer-indicator" aria-live="assertive"></div>
-        <div id="hostControls" class="host-controls">
+        <div id="hostControls" class="host-controls" data-role="host-only" hidden>
           <h3>Host Controls</h3>
           <div class="row" style="flex-wrap:wrap;gap:.5rem">
             <button id="markCorrect" class="btn btn-primary" disabled>Correct</button>
             <button id="markIncorrect" class="btn btn-alt" disabled>Incorrect</button>
             <button id="clearBuzz" class="btn btn-alt" disabled>Clear Buzz</button>
+            <button id="revealTile" class="btn btn-primary" disabled>Reveal to contestants</button>
           </div>
+        </div>
+        <div id="hostAnswerPanel" class="host-answer" data-role="host-only" aria-live="polite" hidden>
+          <h3>Host Preview</h3>
+          <p id="hostAnswerMeta" class="muted">Select a clue to preview the correct response.</p>
+          <p id="hostAnswerText" style="font-weight:600"></p>
         </div>
       </div>
     </section>
 
     <section class="row" style="justify-content:space-between;margin-top:1.25rem;align-items:flex-start;gap:.75rem">
-      <div class="tips muted" style="font-size:.9rem">
+      <div class="tips muted" style="font-size:.9rem" data-role="host-only" hidden>
         <details open>
           <summary>Host tips</summary>
           <ul style="margin:.5rem 0 .25rem 1.25rem">
@@ -156,6 +167,20 @@
   // -----------------------------
   // Board Content (4 x 4)
   // -----------------------------
+  const params = new URLSearchParams(window.location.search);
+  const roleParam = params.get('role');
+  const IS_HOST = roleParam ? roleParam.toLowerCase()==='host' : true;
+  window.IS_HOST = IS_HOST;
+  document.body.classList.remove('role-host','role-contestant');
+  document.body.classList.add(IS_HOST ? 'role-host' : 'role-contestant');
+  document.querySelectorAll('[data-role="host-only"]').forEach(el=>{
+    if(IS_HOST){
+      el.removeAttribute('hidden');
+    } else {
+      el.setAttribute('hidden','');
+    }
+  });
+
   const BOARD = [
     { category: "Planet Positive 🌍", clues: [
       { value:100, clue:"Turner is working toward this long-term environmental goal, common across the construction industry.", response:"What is Net-Zero Emissions?" },
@@ -208,6 +233,7 @@
   let activeTile = null; // {col,row}
   let buzzersEnabled = false;
   let currentResponder = null;
+  let hostPreviewTile = null;
 
   // DOM refs
   const boardEl = document.getElementById('board');
@@ -229,11 +255,58 @@
   const markCorrectBtn = document.getElementById('markCorrect');
   const markIncorrectBtn = document.getElementById('markIncorrect');
   const clearBuzzBtn = document.getElementById('clearBuzz');
+  const revealTileBtn = document.getElementById('revealTile');
+  const hostAnswerPanel = document.getElementById('hostAnswerPanel');
+  const hostAnswerMeta = document.getElementById('hostAnswerMeta');
+  const hostAnswerText = document.getElementById('hostAnswerText');
 
   const contestantEls = new Map();
   const scoreEls = new Map();
   const buzzerBtnEls = new Map();
   const keyToContestant = new Map();
+
+  const CLIENT_ID = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const CHANNEL_NAME = 'esg-jeopardy-sync';
+  const STORAGE_KEY = `__${CHANNEL_NAME}`;
+  const broadcastChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel(CHANNEL_NAME) : null;
+
+  if(broadcastChannel){
+    broadcastChannel.onmessage = (event)=>{
+      const data = event && event.data;
+      if(!data || data.senderId === CLIENT_ID) return;
+      handleSyncMessage(data);
+    };
+  } else {
+    window.addEventListener('storage', (event)=>{
+      if(event.key !== STORAGE_KEY || !event.newValue) return;
+      try{
+        const data = JSON.parse(event.newValue);
+        if(!data || data.senderId === CLIENT_ID) return;
+        handleSyncMessage(data);
+      }catch(e){
+        console.warn('Failed to parse sync message', e);
+      }
+    });
+  }
+
+  function broadcast(type,payload){
+    if(!IS_HOST) return;
+    const message = { senderId: CLIENT_ID, type, payload, ts: Date.now() };
+    if(broadcastChannel){
+      try{ broadcastChannel.postMessage(message); }catch(e){ console.warn('Broadcast channel failed', e); }
+    } else {
+      try{
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(message));
+        localStorage.removeItem(STORAGE_KEY);
+      }catch(e){
+        console.warn('LocalStorage broadcast failed', e);
+      }
+    }
+  }
+
+  function broadcastScores(){
+    broadcast('scores',{contestants: CONTESTANTS.map(({id,score})=>({id,score}))});
+  }
 
   function formatScore(value){
     try{
@@ -255,10 +328,31 @@
     buzzerIndicator.style.display = 'block';
   }
 
+  function setHostPreview(colIdx,rowIdx,item){
+    if(!hostAnswerPanel || !hostAnswerMeta || !hostAnswerText) return;
+    hostPreviewTile = {col:colIdx,row:rowIdx};
+    hostAnswerPanel.dataset.state = 'active';
+    const valueLabel = item && typeof item.value === 'number' ? formatScore(item.value) : '';
+    hostAnswerMeta.textContent = `${BOARD[colIdx].category}${valueLabel ? ` — ${valueLabel}` : ''}`;
+    hostAnswerText.textContent = item ? item.response : '';
+  }
+
+  function clearHostPreview(){
+    if(!hostAnswerPanel || !hostAnswerMeta || !hostAnswerText) return;
+    hostPreviewTile = null;
+    hostAnswerPanel.removeAttribute('data-state');
+    hostAnswerMeta.textContent = 'Select a clue to preview the correct response.';
+    hostAnswerText.textContent = '';
+  }
+
   function updateHostControls(){
     const hasResponder = !!currentResponder;
     [markCorrectBtn,markIncorrectBtn,clearBuzzBtn].forEach(btn=>{ if(btn) btn.disabled = !hasResponder; });
     if(hostControls) hostControls.classList.toggle('active', hasResponder);
+    if(revealTileBtn){
+      const canReveal = !!activeTile && states[activeTile.col][activeTile.row]==='clue';
+      revealTileBtn.disabled = !canReveal;
+    }
   }
 
   function updateContestantDisplay(){
@@ -268,6 +362,18 @@
       if(scoreEl) scoreEl.textContent = formatScore(contestant.score);
       if(row) row.classList.toggle('active', !!currentResponder && currentResponder.id===contestant.id);
     });
+  }
+
+  function applyScores(data){
+    if(!Array.isArray(data)) return;
+    data.forEach(item=>{
+      if(!item) return;
+      const contestant = CONTESTANTS.find(c=>c.id===item.id);
+      if(contestant && typeof item.score === 'number'){
+        contestant.score = item.score;
+      }
+    });
+    updateContestantDisplay();
   }
 
   function disableBuzzers(message='Buzzers locked'){
@@ -380,11 +486,12 @@
     const contestant = currentResponder;
     const value = BOARD[activeTile.col].clues[activeTile.row].value || 0;
     contestant.score += value;
+    currentResponder = null;
     updateContestantDisplay();
-    setTileState(activeTile.col,activeTile.row,'response');
-    setTileState(activeTile.col,activeTile.row,'done');
-    updateRemaining();
-    setIndicator(`${contestant.name} is correct!`, 'success');
+    updateHostControls();
+    disableBuzzers('Buzzers locked');
+    setIndicator(`${contestant.name} is correct! Reveal when ready.`, 'success');
+    broadcastScores();
   }
 
   function handleIncorrect(){
@@ -397,6 +504,7 @@
     updateHostControls();
     enableBuzzers('Buzzers reopened');
     setIndicator(`${contestant.name} is incorrect. Buzzers reopened.`, 'warn');
+    broadcastScores();
   }
 
   function handleClear(){
@@ -407,6 +515,55 @@
     updateHostControls();
     enableBuzzers('Buzzers reopened');
     setIndicator(`Buzz cleared for ${name}. Awaiting buzz.`, 'info');
+  }
+
+  function revealActiveTile(options={}){
+    const fromSync = !!options.fromSync;
+    const colIdx = options.colIdx ?? (activeTile && activeTile.col);
+    const rowIdx = options.rowIdx ?? (activeTile && activeTile.row);
+    if(colIdx===undefined || rowIdx===undefined) return;
+    if(IS_HOST && !fromSync) broadcast('revealTile',{colIdx,rowIdx});
+    setTileState(colIdx,rowIdx,'response',options);
+    setTileState(colIdx,rowIdx,'done',options);
+    updateRemaining();
+  }
+
+  function handleSyncMessage(message){
+    if(!message || typeof message !== 'object') return;
+    const { type, payload } = message;
+    switch(type){
+      case 'advanceTile':
+        if(payload) advanceTile(payload.colIdx,payload.rowIdx,{fromSync:true});
+        break;
+      case 'setTileState':
+        if(payload) setTileState(payload.colIdx,payload.rowIdx,payload.state,{fromSync:true,broadcast:false});
+        updateRemaining();
+        break;
+      case 'scores':
+        if(payload) applyScores(payload.contestants);
+        break;
+      case 'resetBoard':
+        resetBoard({fromSync:true});
+        break;
+      case 'openFinal':
+        openFinal({fromSync:true});
+        break;
+      case 'closeFinal':
+        closeFinal({fromSync:true});
+        break;
+      case 'toggleFinal':
+        if(payload && Object.prototype.hasOwnProperty.call(payload,'force')){
+          toggleFinal({fromSync:true, force: payload.force});
+        } else {
+          toggleFinal({fromSync:true});
+        }
+        break;
+      case 'revealTile':
+        if(payload) revealActiveTile({fromSync:true,colIdx:payload.colIdx,rowIdx:payload.rowIdx});
+        break;
+      default:
+        break;
+    }
   }
 
   // Build Board DOM once
@@ -455,7 +612,8 @@
     remainingText.textContent = `Remaining tiles: ${remaining}`;
   }
 
-  function setTileState(colIdx,rowIdx,state){
+  function setTileState(colIdx,rowIdx,state,options){
+    options = options || {};
     states[colIdx][rowIdx] = state;
     const btn = tileBtn(colIdx,rowIdx);
     const item = BOARD[colIdx].clues[rowIdx];
@@ -486,6 +644,15 @@
     }
 
     handleBuzzerStateForTile(colIdx,rowIdx,state);
+    if(state==='clue'){
+      setHostPreview(colIdx,rowIdx,item);
+    } else if(hostPreviewTile && hostPreviewTile.col===colIdx && hostPreviewTile.row===rowIdx){
+      clearHostPreview();
+    }
+    if(IS_HOST) updateHostControls();
+    if(IS_HOST && options.broadcast !== false && !options.fromSync){
+      broadcast('setTileState',{colIdx,rowIdx,state});
+    }
   }
 
   function isFlashingAt(colIdx,rowIdx){
@@ -512,19 +679,23 @@
     return doublePos && doublePos.col===colIdx && doublePos.row===rowIdx;
   }
 
-  function advanceTile(colIdx,rowIdx){
-    if(gameEnded) return;
+  function advanceTile(colIdx,rowIdx,options={}){
+    const fromSync = !!options.fromSync;
+    if(!fromSync && !IS_HOST) return;
+    if(gameEnded && !fromSync) return;
+    const currentState = states[colIdx][rowIdx];
+    if(!fromSync && currentState==='clue') return; // wait for explicit reveal control
+    if(IS_HOST && !fromSync) broadcast('advanceTile',{colIdx,rowIdx});
 
     // Double Jeopardy behaviour
     if(isDoubleAt(colIdx,rowIdx)){
-      const current = states[colIdx][rowIdx];
-      if(current==='hidden'){
+      if(currentState==='hidden'){
         flashingPos = {col:colIdx,row:rowIdx};
         setFlashing(colIdx,rowIdx,true);
         setTimeout(()=>{
           setFlashing(colIdx,rowIdx,false);
           flashingPos = null;
-          setTileState(colIdx,rowIdx,'clue');
+          setTileState(colIdx,rowIdx,'clue',options);
           updateRemaining();
         },2000);
         return;
@@ -532,12 +703,13 @@
     }
 
     // Regular flow
-    const next = nextState(states[colIdx][rowIdx]);
-    setTileState(colIdx,rowIdx,next);
+    const next = nextState(currentState);
+    setTileState(colIdx,rowIdx,next,options);
     updateRemaining();
   }
 
-  function resetBoard(){
+  function resetBoard(options={}){
+    const fromSync = !!options.fromSync;
     states = BOARD.map(col=>col.clues.map(()=>"hidden"));
     flashingPos = null;
     doublePos = pickRandomTile();
@@ -548,23 +720,34 @@
     resetBuzzerSystem();
     try{ audio.pause(); audio.currentTime = 0; }catch(e){}
     // Re-render tiles
-    BOARD.forEach((col,ci)=>col.clues.forEach((_,ri)=>setTileState(ci,ri,'hidden')));
+    BOARD.forEach((col,ci)=>col.clues.forEach((_,ri)=>setTileState(ci,ri,'hidden',{broadcast:false})));
     updateContestantDisplay();
+    clearHostPreview();
+    updateHostControls();
     updateRemaining();
+    if(IS_HOST && !fromSync){
+      broadcast('resetBoard',{});
+      broadcastScores();
+    }
   }
 
   const DEFAULT_FINAL_SRC = 'JeopardyMusic.mp3';
 
-  async function openFinal(){
+  async function openFinal(options={}){
+    const fromSync = !!options.fromSync;
     gameEnded = true; // disables board via disabled attr set when reaching 'done' only; we prevent clicks by short-circuit
     showFinal = true;
     finalRevealed = false;
     resetBuzzerSystem();
+    clearHostPreview();
     setIndicator('Final Jeopardy in progress. Buzzers disabled.', 'info');
     finalContent.textContent = FINAL.clue;
     finalToggle.setAttribute('aria-pressed','false');
     revealBtn.style.display = '';
     modal.style.display = 'flex';
+    if(IS_HOST && !fromSync){
+      broadcast('openFinal',{});
+    }
     try{
       audio.src = DEFAULT_FINAL_SRC;
       audio.currentTime = 0;
@@ -574,28 +757,41 @@
       console.warn('Final Jeopardy audio playback failed:', e);
     }
   }
-  function closeFinal(){
+  function closeFinal(options={}){
+    const fromSync = !!options.fromSync;
     modal.style.display = 'none';
     showFinal = false;
+    if(IS_HOST && !fromSync){
+      broadcast('closeFinal',{});
+    }
     try{ audio.pause(); audio.currentTime = 0; }catch(e){}
   }
-  function toggleFinal(){
-    finalRevealed = !finalRevealed;
+  function toggleFinal(options={}){
+    const fromSync = !!options.fromSync;
+    if(Object.prototype.hasOwnProperty.call(options,'force')){
+      finalRevealed = !!options.force;
+    } else {
+      finalRevealed = !finalRevealed;
+    }
     finalContent.textContent = finalRevealed ? FINAL.response : FINAL.clue;
     finalToggle.setAttribute('aria-pressed', String(finalRevealed));
     revealBtn.style.display = finalRevealed ? 'none' : '';
+    if(IS_HOST && !fromSync){
+      broadcast('toggleFinal',{force: finalRevealed});
+    }
   }
 
   // Wire up controls
-  resetBtn.addEventListener('click', resetBoard);
-  finalBtn.addEventListener('click', openFinal);
-  closeBtn.addEventListener('click', closeFinal);
-  revealBtn.addEventListener('click', ()=>{ if(!finalRevealed) toggleFinal(); });
-  finalToggle.addEventListener('click', toggleFinal);
-  finalToggle.addEventListener('keydown', (e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); toggleFinal(); }});
-  markCorrectBtn.addEventListener('click', handleCorrect);
-  markIncorrectBtn.addEventListener('click', handleIncorrect);
-  clearBuzzBtn.addEventListener('click', handleClear);
+  resetBtn.addEventListener('click', ()=>{ if(!IS_HOST) return; resetBoard(); });
+  finalBtn.addEventListener('click', ()=>{ if(!IS_HOST) return; openFinal(); });
+  closeBtn.addEventListener('click', ()=>{ if(!IS_HOST) return; closeFinal(); });
+  revealBtn.addEventListener('click', ()=>{ if(!IS_HOST || finalRevealed) return; toggleFinal(); });
+  finalToggle.addEventListener('click', ()=>{ if(!IS_HOST) return; toggleFinal(); });
+  finalToggle.addEventListener('keydown', (e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); if(!IS_HOST) return; toggleFinal(); }});
+  if(revealTileBtn) revealTileBtn.addEventListener('click', ()=>{ if(!IS_HOST) return; revealActiveTile(); });
+  markCorrectBtn.addEventListener('click', ()=>{ if(!IS_HOST) return; handleCorrect(); });
+  markIncorrectBtn.addEventListener('click', ()=>{ if(!IS_HOST) return; handleIncorrect(); });
+  clearBuzzBtn.addEventListener('click', ()=>{ if(!IS_HOST) return; handleClear(); });
 
   document.addEventListener('keydown',(event)=>{
     if(event.repeat) return;
@@ -611,7 +807,7 @@
   buildContestantUI();
   buildBoard();
   // Initialize each tile explicitly so content matches state
-  BOARD.forEach((col,ci)=>col.clues.forEach((_,ri)=>setTileState(ci,ri,'hidden')));
+  BOARD.forEach((col,ci)=>col.clues.forEach((_,ri)=>setTileState(ci,ri,'hidden',{broadcast:false})));
 
   // Minimal runtime assertions in console (dev aid)
   try{
