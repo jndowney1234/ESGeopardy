@@ -78,6 +78,10 @@
     .host-answer h3{margin:0;font-size:1rem}
     .host-answer p{margin:0;font-size:.9rem}
     .host-answer[data-state="active"]{border-style:solid;border-color:var(--blue700);box-shadow:0 0 0 2px rgba(29,78,216,.25)}
+    .double-panel{margin-top:.75rem;padding:.75rem;border-radius:12px;background:#fff;border:1px solid var(--amber300);display:flex;flex-direction:column;gap:.5rem;box-shadow:0 4px 12px rgba(252,211,77,.25)}
+    .double-panel h3{margin:0;font-size:1rem;color:var(--blue800)}
+    .double-panel label{font-weight:600}
+    .double-panel-controls{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
   </style>
 </head>
 <body>
@@ -119,6 +123,18 @@
           <h3>Host Preview</h3>
           <p id="hostAnswerMeta" class="muted">Select a clue to preview the correct response.</p>
           <p id="hostAnswerText" style="font-weight:600"></p>
+        </div>
+        <div id="doublePanel" class="double-panel" data-role="host-only" hidden aria-live="polite" style="display:none">
+          <h3>Daily Double!</h3>
+          <p class="muted" style="margin:0;font-size:.85rem">Set the wager amount before revealing the clue.</p>
+          <div class="double-panel-controls">
+            <label for="doubleInput" style="display:flex;flex-direction:column;gap:.25rem">
+              <span>Wager amount</span>
+              <input id="doubleInput" type="number" min="0" step="50" inputmode="numeric" />
+            </label>
+            <button id="doubleConfirm" class="btn btn-primary" type="button">Lock wager</button>
+            <button id="doubleDefault" class="btn btn-alt" type="button">Use default value</button>
+          </div>
         </div>
       </div>
     </section>
@@ -208,9 +224,22 @@
     ]}
   ];
 
+  BOARD.forEach(col=>{
+    col.clues.forEach(clue=>{
+      if(typeof clue.baseValue !== 'number') clue.baseValue = clue.value;
+      clue.wager = undefined;
+    });
+  });
+
   const FINAL = {
     clue: "This is Turner’s guiding vision that connects caring for people, communities, and the planet with building a better future.",
     response: "What is Building Today to Transform Tomorrow™?",
+  };
+
+  const getClueValue = (clue)=>{
+    if(!clue) return 0;
+    const wager = typeof clue.wager === 'number' && !Number.isNaN(clue.wager) ? clue.wager : null;
+    return wager!==null ? wager : clue.value;
   };
 
   const ALLOWED_STATES = new Set(["hidden","clue","response","done"]);
@@ -234,6 +263,7 @@
   let buzzersEnabled = false;
   let currentResponder = null;
   let hostPreviewTile = null;
+  let pendingDouble = null; // {col,row}
 
   // DOM refs
   const boardEl = document.getElementById('board');
@@ -259,6 +289,10 @@
   const hostAnswerPanel = document.getElementById('hostAnswerPanel');
   const hostAnswerMeta = document.getElementById('hostAnswerMeta');
   const hostAnswerText = document.getElementById('hostAnswerText');
+  const doublePanel = document.getElementById('doublePanel');
+  const doubleInput = document.getElementById('doubleInput');
+  const doubleConfirmBtn = document.getElementById('doubleConfirm');
+  const doubleDefaultBtn = document.getElementById('doubleDefault');
 
   const contestantEls = new Map();
   const scoreEls = new Map();
@@ -328,11 +362,86 @@
     buzzerIndicator.style.display = 'block';
   }
 
+  function showDoubleWagerPanel(colIdx,rowIdx){
+    if(!doublePanel) return;
+    doublePanel.style.display = 'flex';
+    doublePanel.removeAttribute('aria-hidden');
+    const clue = BOARD[colIdx] && BOARD[colIdx].clues[rowIdx];
+    const defaultValue = clue ? getClueValue(clue) || clue.baseValue || 0 : 0;
+    if(doubleInput){
+      doubleInput.value = defaultValue;
+      requestAnimationFrame(()=>{
+        try{
+          doubleInput.focus({ preventScroll: true });
+          doubleInput.select();
+        }catch(_){/* ignore focus issues */}
+      });
+    }
+  }
+
+  function hideDoublePanel(){
+    if(!doublePanel) return;
+    doublePanel.style.display = 'none';
+    doublePanel.setAttribute('aria-hidden','true');
+  }
+
+  function sanitizeWagerInput(raw){
+    if(raw===undefined || raw===null) return null;
+    const cleaned = String(raw).replace(/[^0-9-]/g,'');
+    if(!cleaned) return null;
+    const amount = parseInt(cleaned,10);
+    if(Number.isNaN(amount)) return null;
+    return Math.max(0,amount);
+  }
+
+  function beginDoubleWager(colIdx,rowIdx){
+    pendingDouble = { col: colIdx, row: rowIdx };
+    const btn = tileBtn(colIdx,rowIdx);
+    if(btn) btn.disabled = true;
+    if(IS_HOST){
+      showDoubleWagerPanel(colIdx,rowIdx);
+      setIndicator('Daily Double! Set a wager before reading the clue.', 'info');
+    } else {
+      setIndicator('Daily Double! Waiting for the host to set a wager.', 'info');
+    }
+  }
+
+  function finalizeDoubleWager(colIdx,rowIdx,options={}){
+    const clue = BOARD[colIdx] && BOARD[colIdx].clues[rowIdx];
+    if(!clue) return;
+    const amount = getClueValue(clue);
+    if(IS_HOST && options.broadcast !== false){
+      broadcast('doubleWager',{colIdx,rowIdx,value:amount});
+      broadcast('setTileState',{colIdx,rowIdx,state:'clue',value:amount});
+    }
+    setTileState(colIdx,rowIdx,'clue',{...options,broadcast:false});
+    updateRemaining();
+  }
+
+  function submitDoubleWager({useDefault=false}={}){
+    if(!pendingDouble || !IS_HOST) return;
+    const { col, row } = pendingDouble;
+    const clue = BOARD[col] && BOARD[col].clues[row];
+    if(!clue) return;
+    let amount = null;
+    if(useDefault){
+      amount = clue.baseValue ?? clue.value ?? 0;
+    } else {
+      const parsed = sanitizeWagerInput(doubleInput ? doubleInput.value : null);
+      amount = parsed !== null ? parsed : (clue.baseValue ?? clue.value ?? 0);
+    }
+    clue.wager = amount;
+    pendingDouble = null;
+    hideDoublePanel();
+    finalizeDoubleWager(col,row);
+  }
+
   function setHostPreview(colIdx,rowIdx,item){
     if(!hostAnswerPanel || !hostAnswerMeta || !hostAnswerText) return;
     hostPreviewTile = {col:colIdx,row:rowIdx};
     hostAnswerPanel.dataset.state = 'active';
-    const valueLabel = item && typeof item.value === 'number' ? formatScore(item.value) : '';
+    const value = item ? getClueValue(item) : null;
+    const valueLabel = typeof value === 'number' && !Number.isNaN(value) ? formatScore(value) : '';
     hostAnswerMeta.textContent = `${BOARD[colIdx].category}${valueLabel ? ` — ${valueLabel}` : ''}`;
     hostAnswerText.textContent = item ? item.response : '';
   }
@@ -484,7 +593,7 @@
   function handleCorrect(){
     if(!currentResponder || !activeTile) return;
     const contestant = currentResponder;
-    const value = BOARD[activeTile.col].clues[activeTile.row].value || 0;
+    const value = getClueValue(BOARD[activeTile.col].clues[activeTile.row]) || 0;
     contestant.score += value;
     currentResponder = null;
     updateContestantDisplay();
@@ -497,7 +606,7 @@
   function handleIncorrect(){
     if(!currentResponder || !activeTile) return;
     const contestant = currentResponder;
-    const value = BOARD[activeTile.col].clues[activeTile.row].value || 0;
+    const value = getClueValue(BOARD[activeTile.col].clues[activeTile.row]) || 0;
     contestant.score -= value;
     currentResponder = null;
     updateContestantDisplay();
@@ -536,8 +645,26 @@
         if(payload) advanceTile(payload.colIdx,payload.rowIdx,{fromSync:true});
         break;
       case 'setTileState':
-        if(payload) setTileState(payload.colIdx,payload.rowIdx,payload.state,{fromSync:true,broadcast:false});
+        if(payload){
+          if(Object.prototype.hasOwnProperty.call(payload,'value')){
+            const clue = BOARD[payload.colIdx] && BOARD[payload.colIdx].clues[payload.rowIdx];
+            if(clue){
+              clue.wager = typeof payload.value === 'number' ? payload.value : clue.baseValue;
+              if(!IS_HOST) pendingDouble = null;
+            }
+          }
+          setTileState(payload.colIdx,payload.rowIdx,payload.state,{fromSync:true,broadcast:false});
+        }
         updateRemaining();
+        break;
+      case 'doubleWager':
+        if(payload){
+          const clue = BOARD[payload.colIdx] && BOARD[payload.colIdx].clues[payload.rowIdx];
+          if(clue){
+            clue.wager = typeof payload.value === 'number' ? payload.value : clue.baseValue;
+            if(!IS_HOST) pendingDouble = null;
+          }
+        }
         break;
       case 'scores':
         if(payload) applyScores(payload.contestants);
@@ -683,6 +810,7 @@
     const fromSync = !!options.fromSync;
     if(!fromSync && !IS_HOST) return;
     if(gameEnded && !fromSync) return;
+    if(!fromSync && pendingDouble && (pendingDouble.col!==colIdx || pendingDouble.row!==rowIdx)) return;
     const currentState = states[colIdx][rowIdx];
     if(!fromSync && currentState==='clue') return; // wait for explicit reveal control
     if(IS_HOST && !fromSync) broadcast('advanceTile',{colIdx,rowIdx});
@@ -695,8 +823,7 @@
         setTimeout(()=>{
           setFlashing(colIdx,rowIdx,false);
           flashingPos = null;
-          setTileState(colIdx,rowIdx,'clue',options);
-          updateRemaining();
+          beginDoubleWager(colIdx,rowIdx);
         },2000);
         return;
       }
@@ -717,6 +844,9 @@
     showFinal = false;
     finalRevealed = false;
     CONTESTANTS.forEach(contestant=>{ contestant.score = 0; });
+    BOARD.forEach(col=>col.clues.forEach(clue=>{ clue.wager = undefined; }));
+    pendingDouble = null;
+    hideDoublePanel();
     resetBuzzerSystem();
     try{ audio.pause(); audio.currentTime = 0; }catch(e){}
     // Re-render tiles
@@ -792,6 +922,16 @@
   markCorrectBtn.addEventListener('click', ()=>{ if(!IS_HOST) return; handleCorrect(); });
   markIncorrectBtn.addEventListener('click', ()=>{ if(!IS_HOST) return; handleIncorrect(); });
   clearBuzzBtn.addEventListener('click', ()=>{ if(!IS_HOST) return; handleClear(); });
+  if(doubleConfirmBtn) doubleConfirmBtn.addEventListener('click', ()=>{ if(!IS_HOST) return; submitDoubleWager(); });
+  if(doubleDefaultBtn) doubleDefaultBtn.addEventListener('click', ()=>{ if(!IS_HOST) return; submitDoubleWager({useDefault:true}); });
+  if(doubleInput) doubleInput.addEventListener('keydown', (event)=>{
+    if(event.key === 'Enter' && IS_HOST){
+      event.preventDefault();
+      submitDoubleWager();
+    }
+  });
+
+  hideDoublePanel();
 
   document.addEventListener('keydown',(event)=>{
     if(event.repeat) return;
