@@ -541,8 +541,9 @@
       try{
         const baseHref = window.location.href.split('#')[0];
         const shareUrl = new URL(baseHref, window.location.origin || 'http://localhost');
+        shareUrl.search = '';
+        shareUrl.hash = '';
         shareUrl.searchParams.set('role','contestant');
-        if(ROOM_CODE) shareUrl.searchParams.set('room', ROOM_CODE);
         if(wsParam) shareUrl.searchParams.set('ws', wsParam);
         const wsPortQuery = params.get('wsport');
         if(wsPortQuery) shareUrl.searchParams.set('wsport', wsPortQuery);
