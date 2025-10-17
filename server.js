@@ -176,35 +176,17 @@ function handleBuzzResult(ws, message) {
 }
 
 function handleJoinContestant(ws, message) {
+  const denialMessage = 'Mobile contestant joining is no longer supported. Please use the host board.';
   const code = sanitizeRoomCode(message.roomCode);
   const room = getRoom(code);
-  const name = sanitizeName(message.payload && message.payload.name);
-  if (!room || !room.host || room.host.readyState !== WebSocket.OPEN) {
-    send(ws, { type: 'join-denied', message: 'Room not found. Ask the host for a new code.' });
-    return;
+  if (room) {
+    ws.roomCode = room.code;
   }
-  ws.roomCode = room.code;
-  const existingRequest = ws.pendingRequestId && room.pendingJoins.get(ws.pendingRequestId);
-  if (existingRequest) {
-    // update name if changed
-    existingRequest.name = name || existingRequest.name;
-    room.pendingJoins.set(ws.pendingRequestId, existingRequest);
-    return;
-  }
-  const requestId = generateClientId();
-  room.pendingJoins.set(requestId, {
-    ws,
-    name: name || 'Contestant',
-  });
-  ws.pendingRequestId = requestId;
-  send(ws, { type: 'join-pending', requestId });
-  if (room.host && room.host.readyState === WebSocket.OPEN) {
-    send(room.host, {
-      type: 'contestant-requested',
-      requestId,
-      name: name || 'Contestant',
-      requestedAt: Date.now(),
-    });
+  send(ws, { type: 'join-denied', message: denialMessage });
+  try {
+    ws.close();
+  } catch (err) {
+    /* ignore */
   }
 }
 

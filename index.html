@@ -145,35 +145,11 @@
           <div id="joinRequestsList" class="join-requests-list"></div>
         </div>
         <div id="networkStatus" class="status"></div>
-        <div id="hostRoomInfo" class="network-card" data-role="host-only" hidden>
+        <div id="hostRoomInfo" class="network-card" data-role="host-only">
           <div>
-            <strong>Remote buzzer room code</strong>
-            <div id="roomCodeDisplay" class="network-code" aria-live="polite">----</div>
+            <strong>Mobile contestant joining disabled</strong>
+            <p class="status" id="hostRealtimeStatus">Contestants now play using the shared board only.</p>
           </div>
-          <div>
-            <label style="font-weight:600;font-size:.85rem;display:flex;flex-direction:column;gap:.25rem">
-              Share this link with contestants
-              <input id="shareLink" class="share-link" type="text" readonly />
-            </label>
-          </div>
-          <div class="status" id="hostRealtimeStatus">Waiting for connection…</div>
-        </div>
-      </div>
-      <div id="contestantPanel" class="panel contestant-panel" data-role="contestant-only" hidden>
-        <h2>Remote Buzzer</h2>
-        <p class="muted">Enter the room code shared by the host and your name to get ready to buzz in.</p>
-        <div id="contestantJoin" class="contestant-join" data-role="contestant-only" hidden>
-          <label for="joinCodeInput">Room code</label>
-          <input id="joinCodeInput" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" />
-          <label for="contestantNameInput">Your name</label>
-          <input id="contestantNameInput" type="text" maxlength="40" placeholder="e.g., Alex" />
-          <button id="joinGameBtn" class="btn btn-primary" type="button">Join Game</button>
-          <div id="joinStatus" class="status" aria-live="polite"></div>
-        </div>
-        <div id="contestantClient" class="contestant-client" data-role="contestant-only" hidden>
-          <div class="contestant-name-label">Buzzing in as <span id="activeContestantName"></span></div>
-          <button id="contestantBuzzBtn" class="btn btn-primary" type="button" disabled>Buzz In!</button>
-          <div id="contestantClientStatus" class="status" aria-live="polite"></div>
         </div>
       </div>
       <div class="panel" data-role="host-only">
@@ -252,24 +228,31 @@
   // -----------------------------
   const params = new URLSearchParams(window.location.search);
   const roleParam = params.get('role');
-  const IS_HOST = roleParam ? roleParam.toLowerCase()==='host' : true;
+  const contestantModeRequested = roleParam && roleParam.toLowerCase()==='contestant';
+  const IS_HOST = true;
   window.IS_HOST = IS_HOST;
   document.body.classList.remove('role-host','role-contestant');
-  document.body.classList.add(IS_HOST ? 'role-host' : 'role-contestant');
+  document.body.classList.add('role-host');
   document.querySelectorAll('[data-role="host-only"]').forEach(el=>{
-    if(IS_HOST){
-      el.removeAttribute('hidden');
-    } else {
-      el.setAttribute('hidden','');
-    }
+    el.removeAttribute('hidden');
   });
   document.querySelectorAll('[data-role="contestant-only"]').forEach(el=>{
-    if(IS_HOST){
-      el.setAttribute('hidden','');
-    } else {
-      el.removeAttribute('hidden');
-    }
+    el.setAttribute('hidden','');
   });
+  if(contestantModeRequested){
+    const containerEl = document.querySelector('.container');
+    if(containerEl){
+      const notice = document.createElement('p');
+      notice.className = 'status';
+      notice.style.fontSize = '0.95rem';
+      notice.style.fontStyle = 'normal';
+      notice.style.fontWeight = '600';
+      notice.style.color = '#b91c1c';
+      notice.style.marginBottom = '1rem';
+      notice.textContent = 'Mobile contestant mode has been removed. Please connect using the main host board.';
+      containerEl.insertBefore(notice, containerEl.firstChild);
+    }
+  }
 
   const BOARD = [
     { category: "Planet Positive 🌍", clues: [
@@ -423,6 +406,12 @@
   const activeContestantName = document.getElementById('activeContestantName');
   const contestantBuzzBtn = document.getElementById('contestantBuzzBtn');
   const contestantClientStatus = document.getElementById('contestantClientStatus');
+
+  if(hostRealtimeStatus){
+    hostRealtimeStatus.textContent = 'Contestants now play using the shared board only.';
+  }
+  setNetworkStatus('Remote buzzer connections disabled.');
+  updateNetworkSummary();
 
   if(shareLinkInput){
     shareLinkInput.addEventListener('focus', ()=>{ try{ shareLinkInput.select(); }catch(_){ /* ignore */ } });
@@ -808,8 +797,8 @@
           hostRegistered = true;
           clearJoinRequests();
           updateHostShareLink();
-          setHostStatus('Host connected. Share the link below.');
-          setNetworkStatus('Connected to buzzer server.');
+          setHostStatus('Host connected. Remote buzzer connections are disabled.');
+          setNetworkStatus('Connected to buzzer server — remote buzzers disabled.');
           flushRealtimeQueue();
           broadcastContestants();
           broadcastScores();
@@ -908,8 +897,8 @@
       realtimeOpen = true;
       if(IS_HOST){
         hostRegistered = false;
-        setHostStatus('Connected. Registering room…');
-        setNetworkStatus('Connected to buzzer server.');
+        setHostStatus('Connected. Registering room (remote buzzers disabled)…');
+        setNetworkStatus('Connected to buzzer server — remote buzzers disabled.');
         sendRealtime({ action: 'register-host', roomCode: ROOM_CODE }, { requireHostReady: false });
       } else {
         setNetworkStatus('Connected. Enter the room code from the host.');
@@ -1126,7 +1115,7 @@
       const buzzerBtn = buzzerBtnEls.get(contestant.id);
       if(scoreEl) scoreEl.textContent = formatScore(contestant.score);
       if(nameLabel) nameLabel.textContent = contestant.name;
-      if(tag) tag.textContent = contestant.connected ? 'Connected' : 'Open slot';
+      if(tag) tag.textContent = contestant.connected ? 'Connected' : 'In-person play';
       if(row){
         row.classList.toggle('active', !!currentResponder && currentResponder.id===contestant.id);
         row.classList.toggle('connected', !!contestant.connected);
@@ -1140,8 +1129,7 @@
   }
 
   function updateNetworkSummary(){
-    const connected = CONTESTANTS.filter(c=>c.connected).length;
-    connectionSummaryMessage = connected === 0 ? 'No contestants connected yet' : `${connected}/3 contestants connected`;
+    connectionSummaryMessage = 'Contestants should use this board to buzz in.';
     renderNetworkStatus();
   }
 
@@ -1672,7 +1660,9 @@
   }
 
   hideDoublePanel();
-  connectRealtime();
+  if(!contestantModeRequested){
+    connectRealtime();
+  }
 
   document.addEventListener('keydown',(event)=>{
     if(event.repeat) return;
