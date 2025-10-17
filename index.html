@@ -54,9 +54,12 @@
     .panel{padding:1rem;border-radius:16px;border:1px solid var(--indigo100);background:var(--indigo50)}
     .panel h2{margin:0 0 .5rem;font-size:1.125rem}
     .contestant-list{display:grid;gap:.5rem}
-    .contestant{display:flex;justify-content:space-between;align-items:center;padding:.75rem 1rem;border-radius:12px;background:#fff;border:1px solid var(--gray200);box-shadow:0 1px 2px rgba(15,23,42,.08);transition:.15s}
+    .contestant{display:flex;justify-content:space-between;align-items:center;padding:.75rem 1rem;border-radius:12px;background:#fff;border:1px solid var(--gray200);box-shadow:0 1px 2px rgba(15,23,42,.08);transition:.15s;position:relative}
     .contestant.active{border-color:var(--amber300);box-shadow:0 4px 10px rgba(252,211,77,.35);background:var(--amber200)}
-    .contestant-name{font-weight:600}
+    .contestant.connected{border-color:var(--emerald200);box-shadow:0 4px 12px rgba(16,185,129,.25)}
+    .contestant-name{font-weight:600;display:flex;align-items:center;gap:.5rem}
+    .contestant-tag{font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;padding:.15rem .4rem;border-radius:999px;background:var(--gray200);color:var(--muted)}
+    .contestant.connected .contestant-tag{background:var(--emerald100);color:#047857}
     .contestant-score{font-variant-numeric:tabular-nums;font-weight:600}
     .buzzer-grid{display:flex;flex-wrap:wrap;gap:.5rem}
     .buzzer-btn{background:#fff;color:var(--text);border:1px solid var(--gray300);box-shadow:0 1px 2px rgba(15,23,42,.08)}
@@ -79,6 +82,20 @@
     .double-panel h3{margin:0;font-size:1rem;color:var(--blue800)}
     .double-panel label{font-weight:600}
     .double-panel-controls{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
+    .network-card{margin-top:.75rem;padding:.75rem;border-radius:12px;background:#fff;border:1px solid var(--gray200);box-shadow:0 1px 3px rgba(15,23,42,.1);display:flex;flex-direction:column;gap:.5rem}
+    .network-code{font-size:1.5rem;font-weight:700;letter-spacing:.25em;text-align:center;padding:.5rem;border-radius:10px;background:var(--indigo50);border:1px solid var(--indigo100)}
+    .share-link{width:100%;padding:.35rem .5rem;border-radius:8px;border:1px solid var(--gray300);font-size:.85rem}
+    .contestant-join{margin-top:.75rem;padding:.75rem;border-radius:12px;background:#fff;border:1px solid var(--gray200);box-shadow:0 1px 3px rgba(15,23,42,.1);display:flex;flex-direction:column;gap:.5rem}
+    .contestant-join label{display:flex;flex-direction:column;gap:.25rem;font-weight:600;font-size:.85rem}
+    .contestant-join input{padding:.45rem .6rem;border-radius:8px;border:1px solid var(--gray300);font-size:1rem}
+    .contestant-client{margin-top:.75rem;padding:.75rem;border-radius:12px;background:#fff;border:1px dashed var(--gray300);display:none;flex-direction:column;gap:.5rem}
+    .contestant-client.active{display:flex}
+    .contestant-client .contestant-name-label{font-weight:700;font-size:1rem}
+    .contestant-client .btn-primary{font-size:1.1rem;padding:.85rem 1.25rem}
+    .contestant-client .status{font-size:.85rem}
+    .status{font-size:.8rem;color:var(--muted)}
+    body.role-contestant #buzzerControls{display:none}
+    body.role-host [data-role="contestant-only"]{display:none !important}
   </style>
 </head>
 <body>
@@ -100,6 +117,34 @@
       <div class="panel">
         <h2>Contestants</h2>
         <div id="scoreboardList" class="contestant-list" aria-live="polite"></div>
+        <div id="networkStatus" class="status"></div>
+        <div id="hostRoomInfo" class="network-card" data-role="host-only" hidden>
+          <div>
+            <strong>Remote buzzer room code</strong>
+            <div id="roomCodeDisplay" class="network-code" aria-live="polite">----</div>
+          </div>
+          <div>
+            <label style="font-weight:600;font-size:.85rem;display:flex;flex-direction:column;gap:.25rem">
+              Share this link with contestants
+              <input id="shareLink" class="share-link" type="text" readonly />
+            </label>
+          </div>
+          <div class="status" id="hostRealtimeStatus">Waiting for connection…</div>
+        </div>
+        <div id="contestantJoin" class="contestant-join" data-role="contestant-only" hidden>
+          <h3 style="margin:0;font-size:1rem">Join a game</h3>
+          <label for="joinCodeInput">Room code</label>
+          <input id="joinCodeInput" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" />
+          <label for="contestantNameInput">Your name</label>
+          <input id="contestantNameInput" type="text" maxlength="40" placeholder="e.g., Alex" />
+          <button id="joinGameBtn" class="btn btn-primary" type="button">Join Game</button>
+          <div id="joinStatus" class="status" aria-live="polite"></div>
+        </div>
+        <div id="contestantClient" class="contestant-client" data-role="contestant-only" hidden>
+          <div class="contestant-name-label">Buzzing in as <span id="activeContestantName"></span></div>
+          <button id="contestantBuzzBtn" class="btn btn-primary" type="button" disabled>Buzz In!</button>
+          <div id="contestantClientStatus" class="status" aria-live="polite"></div>
+        </div>
       </div>
       <div class="panel">
         <h2>Buzzers</h2>
@@ -188,6 +233,13 @@
       el.setAttribute('hidden','');
     }
   });
+  document.querySelectorAll('[data-role="contestant-only"]').forEach(el=>{
+    if(IS_HOST){
+      el.setAttribute('hidden','');
+    } else {
+      el.removeAttribute('hidden');
+    }
+  });
 
   const BOARD = [
     { category: "Planet Positive 🌍", clues: [
@@ -239,10 +291,52 @@
   const pickRandomTile = ()=>({ col: Math.floor(Math.random()*BOARD.length), row: Math.floor(Math.random()*BOARD[0].clues.length) });
 
   const CONTESTANTS = [
-    { id: 'contestant-1', name: 'Contestant 1', key: '1', score: 0 },
-    { id: 'contestant-2', name: 'Contestant 2', key: '2', score: 0 },
-    { id: 'contestant-3', name: 'Contestant 3', key: '3', score: 0 },
+    { id: 'contestant-1', name: 'Contestant 1', defaultName: 'Contestant 1', key: '1', score: 0, remoteId: null, connected: false },
+    { id: 'contestant-2', name: 'Contestant 2', defaultName: 'Contestant 2', key: '2', score: 0, remoteId: null, connected: false },
+    { id: 'contestant-3', name: 'Contestant 3', defaultName: 'Contestant 3', key: '3', score: 0, remoteId: null, connected: false },
   ];
+
+  const ROOM_CODE_LENGTH = 4;
+
+  const sanitizeRoomCode = (code)=>{
+    if(!code) return '';
+    const digits = String(code).replace(/[^0-9]/g,'').slice(0,ROOM_CODE_LENGTH);
+    return digits;
+  };
+
+  const sanitizeName = (name)=>{
+    if(!name) return '';
+    return String(name).replace(/[\n\r]+/g,' ').trim().slice(0,40);
+  };
+
+  const generateRoomCode = ()=>{
+    const min = Math.pow(10, ROOM_CODE_LENGTH-1);
+    const max = Math.pow(10, ROOM_CODE_LENGTH) - 1;
+    return String(Math.floor(min + Math.random()*(max-min+1)));
+  };
+
+  let ROOM_CODE = sanitizeRoomCode(params.get('room'));
+  if(IS_HOST && !ROOM_CODE){
+    ROOM_CODE = generateRoomCode();
+  }
+
+  const wsParam = params.get('ws');
+  const wsPortParam = params.get('wsport') || '3001';
+  const fallbackHost = (location.hostname && location.hostname.length) ? location.hostname : 'localhost';
+  const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
+  const WS_URL = wsParam ? wsParam : `${wsProtocol}://${fallbackHost}:${wsPortParam}`;
+
+  let realtimeSocket = null;
+  let realtimeOpen = false;
+  let hostRegistered = false;
+  const realtimeQueue = [];
+  let contestantClientId = null;
+  let contestantSlotId = null;
+  let contestantAssignedKey = null;
+  let contestantJoined = false;
+  let joinPending = false;
+  let connectionStatusMessage = '';
+  let connectionSummaryMessage = '';
 
   // State
   let states = BOARD.map(col=>col.clues.map(()=>"hidden"));
@@ -269,6 +363,7 @@
   const revealBtn = document.getElementById('revealBtn');
   const closeBtn = document.getElementById('closeBtn');
   const scoreboardList = document.getElementById('scoreboardList');
+  const networkStatusEl = document.getElementById('networkStatus');
   const buzzerControls = document.getElementById('buzzerControls');
   const buzzerStatus = document.getElementById('buzzerStatus');
   const buzzerIndicator = document.getElementById('buzzerIndicator');
@@ -281,9 +376,35 @@
   const doubleInput = document.getElementById('doubleInput');
   const doubleConfirmBtn = document.getElementById('doubleConfirm');
   const doubleDefaultBtn = document.getElementById('doubleDefault');
+  const hostRoomInfo = document.getElementById('hostRoomInfo');
+  const roomCodeDisplay = document.getElementById('roomCodeDisplay');
+  const shareLinkInput = document.getElementById('shareLink');
+  const hostRealtimeStatus = document.getElementById('hostRealtimeStatus');
+  const contestantJoin = document.getElementById('contestantJoin');
+  const joinCodeInput = document.getElementById('joinCodeInput');
+  const contestantNameInput = document.getElementById('contestantNameInput');
+  const joinGameBtn = document.getElementById('joinGameBtn');
+  const joinStatus = document.getElementById('joinStatus');
+  const contestantClient = document.getElementById('contestantClient');
+  const activeContestantName = document.getElementById('activeContestantName');
+  const contestantBuzzBtn = document.getElementById('contestantBuzzBtn');
+  const contestantClientStatus = document.getElementById('contestantClientStatus');
+
+  if(shareLinkInput){
+    shareLinkInput.addEventListener('focus', ()=>{ try{ shareLinkInput.select(); }catch(_){ /* ignore */ } });
+    shareLinkInput.addEventListener('click', ()=>{ try{ shareLinkInput.select(); }catch(_){ /* ignore */ } });
+  }
+
+  if(IS_HOST){
+    updateHostShareLink();
+  } else if(joinCodeInput && ROOM_CODE){
+    joinCodeInput.value = ROOM_CODE;
+  }
 
   const contestantEls = new Map();
   const scoreEls = new Map();
+  const nameLabelEls = new Map();
+  const tagEls = new Map();
   const buzzerBtnEls = new Map();
   const keyToContestant = new Map();
 
@@ -311,19 +432,392 @@
     });
   }
 
-  function broadcast(type,payload){
+  function broadcast(type,payload,options={}){
     if(!IS_HOST) return;
     const message = { senderId: CLIENT_ID, type, payload, ts: Date.now() };
-    if(broadcastChannel){
-      try{ broadcastChannel.postMessage(message); }catch(e){ console.warn('Broadcast channel failed', e); }
-    } else {
-      try{
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(message));
-        localStorage.removeItem(STORAGE_KEY);
-      }catch(e){
-        console.warn('LocalStorage broadcast failed', e);
+    if(options.local !== false){
+      if(broadcastChannel){
+        try{ broadcastChannel.postMessage(message); }catch(e){ console.warn('Broadcast channel failed', e); }
+      } else {
+        try{
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(message));
+          localStorage.removeItem(STORAGE_KEY);
+        }catch(e){
+          console.warn('LocalStorage broadcast failed', e);
+        }
       }
     }
+    if(options.remote !== false){
+      sendRealtime({ action: 'broadcast', payload: message });
+    }
+  }
+
+  function flushRealtimeQueue(){
+    if(!realtimeSocket || realtimeSocket.readyState !== WebSocket.OPEN) return;
+    let i = 0;
+    while(i < realtimeQueue.length){
+      const item = realtimeQueue[i];
+      const requireHostReady = !(item.options && item.options.requireHostReady === false);
+      if(IS_HOST && requireHostReady && !hostRegistered){
+        i += 1;
+        continue;
+      }
+      const payload = Object.assign({}, item.message);
+      if(!payload.roomCode && ROOM_CODE){
+        payload.roomCode = ROOM_CODE;
+      }
+      try{
+        realtimeSocket.send(JSON.stringify(payload));
+      }catch(err){
+        console.warn('Failed to send realtime message', err);
+        break;
+      }
+      realtimeQueue.splice(i,1);
+    }
+  }
+
+  function sendRealtime(message,options={}){
+    if(!message || typeof message !== 'object') return;
+    const requireHostReady = !(options && options.requireHostReady === false);
+    const payload = Object.assign({}, message);
+    if(!payload.roomCode && ROOM_CODE){
+      payload.roomCode = ROOM_CODE;
+    }
+    if(!realtimeSocket || realtimeSocket.readyState !== WebSocket.OPEN || (IS_HOST && requireHostReady && !hostRegistered)){
+      realtimeQueue.push({ message: payload, options: { requireHostReady } });
+      return;
+    }
+    try{
+      realtimeSocket.send(JSON.stringify(payload));
+    }catch(err){
+      console.warn('Realtime send failed', err);
+    }
+  }
+
+  function renderNetworkStatus(){
+    if(!networkStatusEl) return;
+    const segments = [];
+    if(connectionStatusMessage) segments.push(connectionStatusMessage);
+    if(connectionSummaryMessage) segments.push(connectionSummaryMessage);
+    networkStatusEl.textContent = segments.join(' — ');
+  }
+
+  function setNetworkStatus(text){
+    connectionStatusMessage = text || '';
+    renderNetworkStatus();
+  }
+
+  function setHostStatus(text){
+    if(hostRealtimeStatus) hostRealtimeStatus.textContent = text || '';
+  }
+
+  function setJoinFeedback(text){
+    if(joinStatus) joinStatus.textContent = text || '';
+  }
+
+  function setContestantStatus(text){
+    if(contestantClientStatus) contestantClientStatus.textContent = text || '';
+  }
+
+  function updateHostShareLink(){
+    if(!IS_HOST) return;
+    if(roomCodeDisplay) roomCodeDisplay.textContent = ROOM_CODE && ROOM_CODE.length ? ROOM_CODE : '----';
+    if(shareLinkInput){
+      try{
+        const baseHref = window.location.href.split('#')[0];
+        const shareUrl = new URL(baseHref, window.location.origin || 'http://localhost');
+        shareUrl.searchParams.set('role','contestant');
+        if(ROOM_CODE) shareUrl.searchParams.set('room', ROOM_CODE);
+        if(wsParam) shareUrl.searchParams.set('ws', wsParam);
+        const wsPortQuery = params.get('wsport');
+        if(wsPortQuery) shareUrl.searchParams.set('wsport', wsPortQuery);
+        shareLinkInput.value = shareUrl.toString();
+      }catch(e){
+        shareLinkInput.value = '';
+      }
+    }
+  }
+
+  function assignContestantSlot(slotId, info){
+    const contestant = CONTESTANTS.find(c=>c.id===slotId);
+    if(!contestant) return;
+    contestant.name = info && info.name ? info.name : contestant.defaultName;
+    contestant.remoteId = info && info.clientId ? info.clientId : null;
+    contestant.connected = !!contestant.remoteId;
+    updateContestantDisplay();
+    broadcastContestants();
+    broadcastScores();
+    if(IS_HOST){
+      const slotNumber = slotId.split('-')[1] || '';
+      setHostStatus(`${contestant.name} joined slot ${slotNumber}.`);
+    }
+  }
+
+  function releaseContestantSlot(slotId){
+    const contestant = CONTESTANTS.find(c=>c.id===slotId);
+    if(!contestant) return;
+    contestant.name = contestant.defaultName;
+    contestant.remoteId = null;
+    contestant.connected = false;
+    updateContestantDisplay();
+    broadcastContestants();
+    broadcastScores();
+    if(IS_HOST){
+      const slotNumber = slotId.split('-')[1] || '';
+      setHostStatus(`Slot ${slotNumber || slotId} is now open.`);
+    }
+  }
+
+  function handleIncomingBuzz(data){
+    if(!IS_HOST || !data) return;
+    const contestant = CONTESTANTS.find(c=>c.id===data.slotId && c.remoteId===data.clientId);
+    if(!contestant) return;
+    handleBuzz(contestant);
+  }
+
+  let remoteBuzzersOpen = false;
+
+  function applyRemoteBuzzersState(state){
+    if(IS_HOST || !state) return;
+    remoteBuzzersOpen = !!state.open;
+    if(contestantBuzzBtn){
+      contestantBuzzBtn.disabled = !contestantJoined || !remoteBuzzersOpen;
+    }
+    const message = state.message || (remoteBuzzersOpen ? 'Buzzers open. Tap to buzz in!' : 'Buzzers locked.');
+    setContestantStatus(message);
+  }
+
+  function handleBuzzResultMessage(data){
+    if(IS_HOST || !data) return;
+    if(contestantSlotId && data.contestantId === contestantSlotId){
+      setContestantStatus('You buzzed in! Waiting for the host.');
+      if(contestantBuzzBtn) contestantBuzzBtn.disabled = true;
+    } else if(data.name){
+      setContestantStatus(`${data.name} buzzed in first.`);
+    }
+  }
+
+  function handleJoinAccepted(data){
+    joinPending = false;
+    contestantJoined = true;
+    contestantClientId = data && data.clientId ? data.clientId : null;
+    contestantSlotId = data && data.slotId ? data.slotId : null;
+    contestantAssignedKey = data && data.key ? data.key : null;
+    if(activeContestantName){
+      activeContestantName.textContent = data && data.name ? data.name : 'Contestant';
+    }
+    if(contestantClient){
+      contestantClient.classList.add('active');
+      contestantClient.removeAttribute('hidden');
+    }
+    if(contestantJoin){
+      contestantJoin.setAttribute('hidden','');
+    }
+    if(contestantBuzzBtn){
+      contestantBuzzBtn.disabled = !remoteBuzzersOpen;
+    }
+    setJoinFeedback('');
+    const slotNumber = contestantSlotId ? contestantSlotId.split('-')[1] : '';
+    const slotLabel = slotNumber ? `Contestant ${slotNumber}` : 'Contestant';
+    setContestantStatus(`Joined as ${slotLabel}. Wait for the host to open buzzers.`);
+  }
+
+  function handleJoinDenied(data){
+    joinPending = false;
+    contestantJoined = false;
+    contestantClientId = null;
+    contestantSlotId = null;
+    const message = data && data.message ? data.message : 'Unable to join. Try again.';
+    setJoinFeedback(message);
+  }
+
+  function handleRealtimeMessage(message){
+    if(!message || typeof message !== 'object') return;
+    const type = message.type;
+    switch(type){
+      case 'host-registered':
+        if(IS_HOST){
+          if(message.roomCode){
+            ROOM_CODE = sanitizeRoomCode(message.roomCode) || ROOM_CODE;
+          }
+          hostRegistered = true;
+          updateHostShareLink();
+          setHostStatus('Host connected. Share the link below.');
+          setNetworkStatus('Connected to buzzer server.');
+          flushRealtimeQueue();
+          broadcastContestants();
+          broadcastScores();
+        }
+        break;
+      case 'contestant-joined':
+        if(IS_HOST) assignContestantSlot(message.slotId, message);
+        break;
+      case 'contestant-left':
+        if(IS_HOST){
+          releaseContestantSlot(message.slotId);
+        } else if(contestantSlotId && message.slotId === contestantSlotId){
+          contestantJoined = false;
+          contestantClientId = null;
+          contestantSlotId = null;
+          if(contestantClient) contestantClient.classList.remove('active');
+          if(contestantBuzzBtn) contestantBuzzBtn.disabled = true;
+          if(contestantJoin) contestantJoin.removeAttribute('hidden');
+          setContestantStatus('Disconnected from the game. Rejoin with the room code.');
+        }
+        break;
+      case 'contestant-buzz':
+        handleIncomingBuzz(message);
+        break;
+      case 'sync':
+        if(!IS_HOST && message.payload) handleSyncMessage(message.payload);
+        break;
+      case 'buzzers-state':
+        applyRemoteBuzzersState(message.payload || message);
+        break;
+      case 'buzz-result':
+        handleBuzzResultMessage(message.payload || message);
+        break;
+      case 'join-accepted':
+        if(joinGameBtn) joinGameBtn.disabled = false;
+        handleJoinAccepted(message);
+        break;
+      case 'join-denied':
+        if(joinGameBtn) joinGameBtn.disabled = false;
+        handleJoinDenied(message);
+        break;
+      case 'room-closed':
+        if(!IS_HOST){
+          joinPending = false;
+          if(joinGameBtn) joinGameBtn.disabled = false;
+          contestantJoined = false;
+          contestantClientId = null;
+          contestantSlotId = null;
+          if(contestantBuzzBtn) contestantBuzzBtn.disabled = true;
+          if(contestantClient){
+            contestantClient.classList.remove('active');
+            contestantClient.setAttribute('hidden','');
+          }
+          if(contestantJoin) contestantJoin.removeAttribute('hidden');
+          setContestantStatus('Host disconnected. Wait for the host to restart the game.');
+          setJoinFeedback('Host disconnected. Try joining again soon.');
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
+  function connectRealtime(){
+    if(typeof WebSocket === 'undefined'){
+      setNetworkStatus('WebSocket not supported in this browser.');
+      if(IS_HOST) setHostStatus('WebSocket unavailable.');
+      return;
+    }
+    if(realtimeSocket) return;
+    setNetworkStatus('Connecting to buzzer server…');
+    if(IS_HOST) setHostStatus('Connecting to buzzer server…');
+    try{
+      realtimeSocket = new WebSocket(WS_URL);
+    }catch(err){
+      console.warn('Failed to connect to realtime server', err);
+      setNetworkStatus('Unable to connect to buzzer server.');
+      if(IS_HOST) setHostStatus('Unable to connect. Check the server.');
+      return;
+    }
+
+    realtimeSocket.addEventListener('open', ()=>{
+      realtimeOpen = true;
+      if(IS_HOST){
+        hostRegistered = false;
+        setHostStatus('Connected. Registering room…');
+        setNetworkStatus('Connected to buzzer server.');
+        sendRealtime({ action: 'register-host', roomCode: ROOM_CODE }, { requireHostReady: false });
+      } else {
+        setNetworkStatus('Connected. Enter the room code from the host.');
+      }
+      flushRealtimeQueue();
+    });
+
+    realtimeSocket.addEventListener('message', (event)=>{
+      let data = null;
+      try{
+        data = JSON.parse(event.data);
+      }catch(e){
+        return;
+      }
+      handleRealtimeMessage(data);
+    });
+
+    realtimeSocket.addEventListener('close', ()=>{
+      realtimeOpen = false;
+      if(IS_HOST) hostRegistered = false;
+      setNetworkStatus('Disconnected from buzzer server. Retrying…');
+      if(IS_HOST) setHostStatus('Disconnected. Attempting to reconnect…');
+      if(!IS_HOST){
+        joinPending = false;
+        if(joinGameBtn) joinGameBtn.disabled = false;
+        contestantJoined = false;
+        contestantClientId = null;
+        contestantSlotId = null;
+        if(contestantBuzzBtn) contestantBuzzBtn.disabled = true;
+        if(contestantClient){
+          contestantClient.classList.remove('active');
+          contestantClient.setAttribute('hidden','');
+        }
+        if(contestantJoin) contestantJoin.removeAttribute('hidden');
+        setJoinFeedback('Lost connection to buzzer server. Trying again…');
+      }
+      realtimeSocket = null;
+      setTimeout(()=>{
+        if(!realtimeSocket){
+          connectRealtime();
+        }
+      }, 3000);
+    });
+
+    realtimeSocket.addEventListener('error', ()=>{
+      setNetworkStatus('Buzzer server connection error.');
+      if(IS_HOST) setHostStatus('Connection error.');
+    });
+  }
+
+  function attemptContestantJoin(){
+    if(IS_HOST || joinPending) return;
+    const code = sanitizeRoomCode(joinCodeInput ? joinCodeInput.value : ROOM_CODE);
+    if(!code || code.length !== ROOM_CODE_LENGTH){
+      setJoinFeedback(`Enter the ${ROOM_CODE_LENGTH}-digit room code.`);
+      return;
+    }
+    const name = sanitizeName(contestantNameInput ? contestantNameInput.value : '');
+    if(!name){
+      setJoinFeedback('Enter your name to join.');
+      if(contestantNameInput){
+        try{ contestantNameInput.focus(); }catch(_){/* ignore */}
+      }
+      return;
+    }
+    ROOM_CODE = code;
+    if(joinCodeInput) joinCodeInput.value = code;
+    joinPending = true;
+    if(joinGameBtn) joinGameBtn.disabled = true;
+    setJoinFeedback('Requesting to join…');
+    sendRealtime({ action: 'join-contestant', roomCode: code, payload: { name } }, { requireHostReady: false });
+  }
+
+  function emitContestantBuzz(){
+    if(IS_HOST) return;
+    if(!contestantJoined || !contestantSlotId || !contestantClientId || !remoteBuzzersOpen) return;
+    sendRealtime({
+      action: 'contestant-buzz',
+      roomCode: ROOM_CODE,
+      payload: {
+        slotId: contestantSlotId,
+        clientId: contestantClientId,
+        name: activeContestantName ? activeContestantName.textContent : undefined,
+      }
+    }, { requireHostReady: false });
+    if(contestantBuzzBtn) contestantBuzzBtn.disabled = true;
+    setContestantStatus('Buzz sent! Waiting for the host.');
   }
 
   function broadcastScores(){
@@ -338,16 +832,22 @@
     }
   }
 
-  function setIndicator(message,tone='info'){
+  function setIndicator(message,tone='info',options={}){
     if(!message){
       buzzerIndicator.textContent = '';
       buzzerIndicator.removeAttribute('data-tone');
       buzzerIndicator.style.display = 'none';
+      if(IS_HOST && options.broadcast !== false){
+        broadcast('indicator',{message:'',tone});
+      }
       return;
     }
     buzzerIndicator.textContent = message;
     buzzerIndicator.dataset.tone = tone;
     buzzerIndicator.style.display = 'block';
+    if(IS_HOST && options.broadcast !== false){
+      broadcast('indicator',{message,tone});
+    }
   }
 
   function showDoubleWagerPanel(colIdx,rowIdx){
@@ -438,9 +938,42 @@
     CONTESTANTS.forEach(contestant=>{
       const row = contestantEls.get(contestant.id);
       const scoreEl = scoreEls.get(contestant.id);
+      const nameLabel = nameLabelEls.get(contestant.id);
+      const tag = tagEls.get(contestant.id);
+      const buzzerBtn = buzzerBtnEls.get(contestant.id);
       if(scoreEl) scoreEl.textContent = formatScore(contestant.score);
-      if(row) row.classList.toggle('active', !!currentResponder && currentResponder.id===contestant.id);
+      if(nameLabel) nameLabel.textContent = contestant.name;
+      if(tag) tag.textContent = contestant.connected ? 'Connected' : 'Open slot';
+      if(row){
+        row.classList.toggle('active', !!currentResponder && currentResponder.id===contestant.id);
+        row.classList.toggle('connected', !!contestant.connected);
+      }
+      if(buzzerBtn){
+        buzzerBtn.textContent = `${contestant.name} (${contestant.key})`;
+        buzzerBtn.setAttribute('aria-label', `Buzz for ${contestant.name} (key ${contestant.key})`);
+      }
     });
+    updateNetworkSummary();
+  }
+
+  function updateNetworkSummary(){
+    const connected = CONTESTANTS.filter(c=>c.connected).length;
+    connectionSummaryMessage = connected === 0 ? 'No contestants connected yet' : `${connected}/3 contestants connected`;
+    renderNetworkStatus();
+  }
+
+  function broadcastContestants(){
+    if(!IS_HOST) return;
+    broadcast('contestants',{list: CONTESTANTS.map(c=>({ id: c.id, name: c.name, connected: !!c.connected }))});
+  }
+
+  function sendBuzzersState(state){
+    if(!IS_HOST) return;
+    const payload = {
+      open: !!(state && state.open),
+      message: state && state.message ? state.message : '',
+    };
+    sendRealtime({ action: 'buzzers-state', payload }, { requireHostReady: true });
   }
 
   function applyScores(data){
@@ -455,51 +988,70 @@
     updateContestantDisplay();
   }
 
-  function disableBuzzers(message='Buzzers locked'){
+  function applyContestantRoster(list){
+    if(!Array.isArray(list)) return;
+    list.forEach(item=>{
+      if(!item) return;
+      const contestant = CONTESTANTS.find(c=>c.id===item.id);
+      if(contestant){
+        if(item.name) contestant.name = item.name;
+        contestant.connected = !!item.connected;
+      }
+    });
+    updateContestantDisplay();
+  }
+
+  function disableBuzzers(message='Buzzers locked', options={}){
     buzzersEnabled = false;
     buzzerBtnEls.forEach(btn=>{ btn.disabled = true; });
     buzzerStatus.textContent = message;
+    if(IS_HOST && options.broadcast !== false){
+      sendBuzzersState({ open: false, message });
+    }
   }
 
-  function enableBuzzers(message='Buzzers ready (keys 1-3)'){
+  function enableBuzzers(message='Buzzers ready (keys 1-3)', options={}){
     if(gameEnded || !activeTile) return;
     buzzersEnabled = true;
     buzzerBtnEls.forEach(btn=>{ btn.disabled = false; });
     buzzerStatus.textContent = message;
+    if(IS_HOST && options.broadcast !== false){
+      sendBuzzersState({ open: true, message });
+    }
   }
 
-  function resetBuzzerSystem(){
+  function resetBuzzerSystem(options={}){
     activeTile = null;
     currentResponder = null;
-    disableBuzzers('Buzzers locked');
-    setIndicator('');
+    disableBuzzers('Buzzers locked', options);
+    setIndicator('', 'info', options);
     updateContestantDisplay();
     updateHostControls();
   }
 
-  function prepareBuzzersForClue(){
+  function prepareBuzzersForClue(options={}){
     if(!activeTile || gameEnded) return;
     currentResponder = null;
     updateContestantDisplay();
     updateHostControls();
-    enableBuzzers();
-    setIndicator('Buzzers open. Awaiting a contestant.', 'ready');
+    enableBuzzers('Buzzers ready (keys 1-3)', options);
+    setIndicator('Buzzers open. Awaiting a contestant.', 'ready', options);
   }
 
-  function handleBuzzerStateForTile(colIdx,rowIdx,state){
+  function handleBuzzerStateForTile(colIdx,rowIdx,state,options={}){
     if(state==='clue'){
       activeTile = {col:colIdx,row:rowIdx};
-      prepareBuzzersForClue();
+      prepareBuzzersForClue(options);
       return;
     }
 
     if(!activeTile || activeTile.col!==colIdx || activeTile.row!==rowIdx) return;
 
     if(state==='hidden'){
-      resetBuzzerSystem();
+      resetBuzzerSystem(options);
     } else if(state==='response'){
-      disableBuzzers('Buzzers locked');
-      if(!currentResponder) setIndicator('Clue resolved.', 'info');
+      disableBuzzers('Buzzers locked', options);
+      if(!currentResponder) setIndicator('Clue resolved.', 'info', options);
       currentResponder = null;
       updateContestantDisplay();
       updateHostControls();
@@ -520,17 +1072,31 @@
       const row = document.createElement('div');
       row.className = 'contestant';
       row.dataset.contestantId = contestant.id;
-      const nameEl = document.createElement('span');
-      nameEl.className = 'contestant-name';
-      nameEl.textContent = contestant.name;
+
+      const nameWrap = document.createElement('span');
+      nameWrap.className = 'contestant-name';
+
+      const nameLabel = document.createElement('span');
+      nameLabel.className = 'contestant-label';
+      nameLabel.textContent = contestant.name;
+      nameWrap.appendChild(nameLabel);
+
+      const tag = document.createElement('span');
+      tag.className = 'contestant-tag';
+      tag.textContent = contestant.connected ? 'Connected' : 'Open slot';
+      nameWrap.appendChild(tag);
+
       const scoreEl = document.createElement('span');
       scoreEl.className = 'contestant-score';
       scoreEl.textContent = formatScore(contestant.score);
-      row.appendChild(nameEl);
+
+      row.appendChild(nameWrap);
       row.appendChild(scoreEl);
       scoreboardList.appendChild(row);
       contestantEls.set(contestant.id,row);
       scoreEls.set(contestant.id,scoreEl);
+      nameLabelEls.set(contestant.id,nameLabel);
+      tagEls.set(contestant.id,tag);
 
       const button = document.createElement('button');
       button.type = 'button';
@@ -549,6 +1115,7 @@
     disableBuzzers('Buzzers locked');
     setIndicator('');
     updateHostControls();
+    updateNetworkSummary();
   }
 
   function handleBuzz(contestant){
@@ -558,6 +1125,9 @@
     updateContestantDisplay();
     updateHostControls();
     setIndicator(`${contestant.name} buzzed in!`, 'active');
+    if(IS_HOST){
+      sendRealtime({ action: 'buzz-result', payload: { contestantId: contestant.id, name: contestant.name } }, { requireHostReady: true });
+    }
   }
 
   function handleCorrect(){
@@ -638,6 +1208,12 @@
         break;
       case 'scores':
         if(payload) applyScores(payload.contestants);
+        break;
+      case 'contestants':
+        if(payload) applyContestantRoster(payload.list);
+        break;
+      case 'indicator':
+        if(payload) setIndicator(payload.message || '', payload.tone || 'info', {broadcast:false});
         break;
       case 'resetBoard':
         resetBoard({fromSync:true});
@@ -740,7 +1316,7 @@
       btn.setAttribute('aria-label','Correct response revealed');
     }
 
-    handleBuzzerStateForTile(colIdx,rowIdx,state);
+    handleBuzzerStateForTile(colIdx,rowIdx,state,options);
     if(IS_HOST) updateHostControls();
     if(IS_HOST && options.broadcast !== false && !options.fromSync){
       broadcast('setTileState',{colIdx,rowIdx,state});
@@ -812,7 +1388,7 @@
     BOARD.forEach(col=>col.clues.forEach(clue=>{ clue.wager = undefined; }));
     pendingDouble = null;
     hideDoublePanel();
-    resetBuzzerSystem();
+    resetBuzzerSystem(fromSync ? {broadcast:false} : {});
     try{ audio.pause(); audio.currentTime = 0; }catch(e){}
     // Re-render tiles
     BOARD.forEach((col,ci)=>col.clues.forEach((_,ri)=>setTileState(ci,ri,'hidden',{broadcast:false})));
@@ -822,6 +1398,7 @@
     if(IS_HOST && !fromSync){
       broadcast('resetBoard',{});
       broadcastScores();
+      broadcastContestants();
     }
   }
 
@@ -894,7 +1471,25 @@
     }
   });
 
+  if(joinGameBtn){
+    joinGameBtn.addEventListener('click', attemptContestantJoin);
+  }
+  if(joinCodeInput){
+    joinCodeInput.addEventListener('keydown',(event)=>{
+      if(event.key === 'Enter'){ event.preventDefault(); attemptContestantJoin(); }
+    });
+  }
+  if(contestantNameInput){
+    contestantNameInput.addEventListener('keydown',(event)=>{
+      if(event.key === 'Enter'){ event.preventDefault(); attemptContestantJoin(); }
+    });
+  }
+  if(contestantBuzzBtn){
+    contestantBuzzBtn.addEventListener('click', emitContestantBuzz);
+  }
+
   hideDoublePanel();
+  connectRealtime();
 
   document.addEventListener('keydown',(event)=>{
     if(event.repeat) return;
