@@ -525,6 +525,7 @@
       realtimeSocket.send(JSON.stringify(payload));
     }catch(err){
       console.warn('Realtime send failed', err);
+      realtimeQueue.push({ message: payload, options: { requireHostReady } });
     }
   }
 
