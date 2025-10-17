@@ -32,9 +32,10 @@
     .tile.clue:hover{filter:brightness(.98)}
     .tile.response{background:var(--emerald100);color:#111827;border-color:var(--emerald200)}
     .tile.response:hover{filter:brightness(.98)}
-    .tile.done,.tile[disabled]{background:var(--gray200);border-color:var(--gray300);color:#9ca3af;cursor:not-allowed}
+    .tile.done{background:var(--emerald100);color:#065f46;border-color:var(--emerald200);cursor:not-allowed}
+    .tile.done .content{font-weight:600}
+    .tile[disabled]{cursor:not-allowed}
     .value-tag{position:absolute;right:.75rem;bottom:.5rem;opacity:.8;font-size:.875rem}
-    .played{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:.9rem}
     .flash{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;border-radius:16px;background:rgba(162,28,175,.9);color:#fff;text-align:center;padding:.75rem;animation:pulse 1s infinite}
     @keyframes pulse{0%{opacity:.95}50%{opacity:.65}100%{opacity:.95}}
 
@@ -74,10 +75,6 @@
     .host-controls .btn:disabled{opacity:.5;cursor:not-allowed}
     .host-controls.active{border-style:solid;border-color:var(--amber300);box-shadow:0 0 0 2px rgba(252,211,77,.35)}
     body.role-contestant [data-role="host-only"]{display:none !important}
-    .host-answer{margin-top:.75rem;padding:.75rem;border-radius:12px;background:#fff;border:1px dashed var(--gray300);display:flex;flex-direction:column;gap:.25rem}
-    .host-answer h3{margin:0;font-size:1rem}
-    .host-answer p{margin:0;font-size:.9rem}
-    .host-answer[data-state="active"]{border-style:solid;border-color:var(--blue700);box-shadow:0 0 0 2px rgba(29,78,216,.25)}
     .double-panel{margin-top:.75rem;padding:.75rem;border-radius:12px;background:#fff;border:1px solid var(--amber300);display:flex;flex-direction:column;gap:.5rem;box-shadow:0 4px 12px rgba(252,211,77,.25)}
     .double-panel h3{margin:0;font-size:1rem;color:var(--blue800)}
     .double-panel label{font-weight:600}
@@ -118,11 +115,6 @@
             <button id="clearBuzz" class="btn btn-alt" disabled>Clear Buzz</button>
             <button id="revealTile" class="btn btn-primary" disabled>Reveal to contestants</button>
           </div>
-        </div>
-        <div id="hostAnswerPanel" class="host-answer" data-role="host-only" aria-live="polite" hidden>
-          <h3>Host Preview</h3>
-          <p id="hostAnswerMeta" class="muted">Select a clue to preview the correct response.</p>
-          <p id="hostAnswerText" style="font-weight:600"></p>
         </div>
         <div id="doublePanel" class="double-panel" data-role="host-only" hidden aria-live="polite" style="display:none">
           <h3>Daily Double!</h3>
@@ -262,7 +254,6 @@
   let activeTile = null; // {col,row}
   let buzzersEnabled = false;
   let currentResponder = null;
-  let hostPreviewTile = null;
   let pendingDouble = null; // {col,row}
 
   // DOM refs
@@ -286,9 +277,6 @@
   const markIncorrectBtn = document.getElementById('markIncorrect');
   const clearBuzzBtn = document.getElementById('clearBuzz');
   const revealTileBtn = document.getElementById('revealTile');
-  const hostAnswerPanel = document.getElementById('hostAnswerPanel');
-  const hostAnswerMeta = document.getElementById('hostAnswerMeta');
-  const hostAnswerText = document.getElementById('hostAnswerText');
   const doublePanel = document.getElementById('doublePanel');
   const doubleInput = document.getElementById('doubleInput');
   const doubleConfirmBtn = document.getElementById('doubleConfirm');
@@ -434,24 +422,6 @@
     pendingDouble = null;
     hideDoublePanel();
     finalizeDoubleWager(col,row);
-  }
-
-  function setHostPreview(colIdx,rowIdx,item){
-    if(!hostAnswerPanel || !hostAnswerMeta || !hostAnswerText) return;
-    hostPreviewTile = {col:colIdx,row:rowIdx};
-    hostAnswerPanel.dataset.state = 'active';
-    const value = item ? getClueValue(item) : null;
-    const valueLabel = typeof value === 'number' && !Number.isNaN(value) ? formatScore(value) : '';
-    hostAnswerMeta.textContent = `${BOARD[colIdx].category}${valueLabel ? ` — ${valueLabel}` : ''}`;
-    hostAnswerText.textContent = item ? item.response : '';
-  }
-
-  function clearHostPreview(){
-    if(!hostAnswerPanel || !hostAnswerMeta || !hostAnswerText) return;
-    hostPreviewTile = null;
-    hostAnswerPanel.removeAttribute('data-state');
-    hostAnswerMeta.textContent = 'Select a clue to preview the correct response.';
-    hostAnswerText.textContent = '';
   }
 
   function updateHostControls(){
@@ -764,18 +734,13 @@
       btn.disabled = false;
       btn.setAttribute('aria-label','Played');
     } else { // done
-      content.innerHTML = '<span class="played">Played</span>';
+      content.textContent = item.response;
       btn.querySelector('.value-tag').style.display = 'none';
       btn.disabled = true;
-      btn.setAttribute('aria-label','Played');
+      btn.setAttribute('aria-label','Correct response revealed');
     }
 
     handleBuzzerStateForTile(colIdx,rowIdx,state);
-    if(state==='clue'){
-      setHostPreview(colIdx,rowIdx,item);
-    } else if(hostPreviewTile && hostPreviewTile.col===colIdx && hostPreviewTile.row===rowIdx){
-      clearHostPreview();
-    }
     if(IS_HOST) updateHostControls();
     if(IS_HOST && options.broadcast !== false && !options.fromSync){
       broadcast('setTileState',{colIdx,rowIdx,state});
@@ -852,7 +817,6 @@
     // Re-render tiles
     BOARD.forEach((col,ci)=>col.clues.forEach((_,ri)=>setTileState(ci,ri,'hidden',{broadcast:false})));
     updateContestantDisplay();
-    clearHostPreview();
     updateHostControls();
     updateRemaining();
     if(IS_HOST && !fromSync){
@@ -869,7 +833,6 @@
     showFinal = true;
     finalRevealed = false;
     resetBuzzerSystem();
-    clearHostPreview();
     setIndicator('Final Jeopardy in progress. Buzzers disabled.', 'info');
     finalContent.textContent = FINAL.clue;
     finalToggle.setAttribute('aria-pressed','false');
