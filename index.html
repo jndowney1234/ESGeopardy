@@ -96,6 +96,17 @@
     .status{font-size:.8rem;color:var(--muted)}
     body.role-contestant #buzzerControls{display:none}
     body.role-host [data-role="contestant-only"]{display:none !important}
+    body.role-contestant .container{max-width:420px;padding:1.5rem 1rem}
+    body.role-contestant header.row{flex-direction:column;gap:.75rem;justify-content:center !important;align-items:center !important;text-align:center}
+    body.role-contestant header.row > div{width:100%}
+    body.role-contestant .control-panel{display:flex;flex-direction:column;gap:1rem;grid-template-columns:1fr;max-width:420px;margin:0 auto}
+    body.role-contestant .control-panel .panel{display:none}
+    body.role-contestant .control-panel .panel[data-role="contestant-only"]{display:flex}
+    .contestant-panel{flex-direction:column;gap:1rem;align-items:stretch}
+    .contestant-panel h2{margin:0;text-align:center}
+    .contestant-panel .muted{text-align:center}
+    body.role-contestant .contestant-join{padding:0;border:none;box-shadow:none}
+    body.role-contestant .contestant-client{border:none}
   </style>
 </head>
 <body>
@@ -103,18 +114,19 @@
     <header class="row" style="justify-content:space-between;align-items:flex-end;margin-bottom:1rem;">
       <div>
         <h1>ESGeopardy — 2024 ESG Edition</h1>
-        <p class="muted">Click once to reveal the <strong>clue</strong>, click again to reveal the <strong>correct response</strong>. After that, the tile is marked as <strong>Played</strong>.</p>
+        <p class="muted" data-role="host-only">Click once to reveal the <strong>clue</strong>, click again to reveal the <strong>correct response</strong>. After that, the tile is marked as <strong>Played</strong>.</p>
+        <p class="muted" data-role="contestant-only" hidden>Enter the room code from the host and your name to connect your remote buzzer.</p>
       </div>
-      <div class="row">
+      <div class="row" data-role="host-only">
         <button id="resetBtn" class="btn btn-primary">Reset Board</button>
         <span id="remainingText" class="muted" style="font-size:.9rem">Remaining tiles: 16</span>
       </div>
     </header>
 
-    <div id="board" class="grid" aria-label="Jeopardy board"></div>
+    <div id="board" class="grid" aria-label="Jeopardy board" data-role="host-only"></div>
 
     <section class="control-panel" aria-label="Scoreboard and buzzer controls">
-      <div class="panel">
+      <div class="panel" data-role="host-only">
         <h2>Contestants</h2>
         <div id="scoreboardList" class="contestant-list" aria-live="polite"></div>
         <div id="networkStatus" class="status"></div>
@@ -131,8 +143,11 @@
           </div>
           <div class="status" id="hostRealtimeStatus">Waiting for connection…</div>
         </div>
+      </div>
+      <div id="contestantPanel" class="panel contestant-panel" data-role="contestant-only" hidden>
+        <h2>Remote Buzzer</h2>
+        <p class="muted">Enter the room code shared by the host and your name to get ready to buzz in.</p>
         <div id="contestantJoin" class="contestant-join" data-role="contestant-only" hidden>
-          <h3 style="margin:0;font-size:1rem">Join a game</h3>
           <label for="joinCodeInput">Room code</label>
           <input id="joinCodeInput" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" />
           <label for="contestantNameInput">Your name</label>
@@ -146,7 +161,7 @@
           <div id="contestantClientStatus" class="status" aria-live="polite"></div>
         </div>
       </div>
-      <div class="panel">
+      <div class="panel" data-role="host-only">
         <h2>Buzzers</h2>
         <p class="buzzer-note">Use the buttons below or press keys <strong>1</strong>, <strong>2</strong>, and <strong>3</strong> to buzz for Contestants 1–3.</p>
         <div id="buzzerControls" class="buzzer-grid"></div>
@@ -176,7 +191,7 @@
       </div>
     </section>
 
-    <section class="row" style="justify-content:space-between;margin-top:1.25rem;align-items:flex-start;gap:.75rem">
+    <section class="row" style="justify-content:space-between;margin-top:1.25rem;align-items:flex-start;gap:.75rem" data-role="host-only">
       <div class="tips muted" style="font-size:.9rem" data-role="host-only" hidden>
         <details open>
           <summary>Host tips</summary>
@@ -196,7 +211,7 @@
   </div>
 
   <!-- Final Jeopardy Modal -->
-  <div id="modal" class="modal" style="display:none">
+  <div id="modal" class="modal" style="display:none" data-role="host-only">
     <div class="card" role="dialog" aria-labelledby="finalTitle" aria-modal="true">
       <div style="text-align:center">
         <div class="muted" style="letter-spacing:.15em;font-size:.8rem">FINAL JEOPARDY</div>
