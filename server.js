@@ -17,7 +17,9 @@ const rooms = new Map();
 
 function sanitizeRoomCode(value) {
   if (!value) return '';
-  return String(value).replace(/[^0-9]/g, '').slice(0, ROOM_CODE_LENGTH);
+  const digits = String(value).replace(/[^0-9]/g, '');
+  if (digits.length < ROOM_CODE_LENGTH) return '';
+  return digits.slice(0, ROOM_CODE_LENGTH);
 }
 
 function sanitizeName(value) {

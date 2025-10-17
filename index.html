@@ -330,8 +330,9 @@
 
   const sanitizeRoomCode = (code)=>{
     if(!code) return '';
-    const digits = String(code).replace(/[^0-9]/g,'').slice(0,ROOM_CODE_LENGTH);
-    return digits;
+    const digits = String(code).replace(/[^0-9]/g,'');
+    if(digits.length < ROOM_CODE_LENGTH) return '';
+    return digits.slice(0,ROOM_CODE_LENGTH);
   };
 
   const sanitizeName = (name)=>{
