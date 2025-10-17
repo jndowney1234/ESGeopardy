@@ -140,17 +140,7 @@
       <div class="panel" data-role="host-only">
         <h2>Contestants</h2>
         <div id="scoreboardList" class="contestant-list" aria-live="polite"></div>
-        <div id="joinRequestsPanel" class="join-requests" data-role="host-only" hidden aria-live="polite">
-          <h3>Join requests</h3>
-          <div id="joinRequestsList" class="join-requests-list"></div>
-        </div>
         <div id="networkStatus" class="status"></div>
-        <div id="hostRoomInfo" class="network-card" data-role="host-only">
-          <div>
-            <strong>Mobile contestant joining disabled</strong>
-            <p class="status" id="hostRealtimeStatus">Contestants now play using the shared board only.</p>
-          </div>
-        </div>
       </div>
       <div class="panel" data-role="host-only">
         <h2>Buzzers</h2>
@@ -410,7 +400,7 @@
   if(hostRealtimeStatus){
     hostRealtimeStatus.textContent = 'Contestants now play using the shared board only.';
   }
-  setNetworkStatus('Remote buzzer connections disabled.');
+  setNetworkStatus('In-person play only.');
   updateNetworkSummary();
 
   if(shareLinkInput){
