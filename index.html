@@ -85,6 +85,17 @@
     .network-card{margin-top:.75rem;padding:.75rem;border-radius:12px;background:#fff;border:1px solid var(--gray200);box-shadow:0 1px 3px rgba(15,23,42,.1);display:flex;flex-direction:column;gap:.5rem}
     .network-code{font-size:1.5rem;font-weight:700;letter-spacing:.25em;text-align:center;padding:.5rem;border-radius:10px;background:var(--indigo50);border:1px solid var(--indigo100)}
     .share-link{width:100%;padding:.35rem .5rem;border-radius:8px;border:1px solid var(--gray300);font-size:.85rem}
+    .join-requests{margin-top:.75rem;padding:.75rem;border-radius:12px;background:#fff;border:1px solid var(--gray200);box-shadow:0 1px 3px rgba(15,23,42,.1);display:flex;flex-direction:column;gap:.75rem}
+    .join-requests[hidden]{display:none}
+    .join-requests h3{margin:0;font-size:1rem}
+    .join-requests-list{display:flex;flex-direction:column;gap:.5rem}
+    .join-request-item{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding-bottom:.5rem;border-bottom:1px solid var(--gray200)}
+    .join-request-item:last-child{padding-bottom:0;border-bottom:none}
+    .join-request-info{display:flex;flex-direction:column;gap:.15rem}
+    .join-request-name{font-weight:600}
+    .join-request-meta{font-size:.8rem;color:var(--muted)}
+    .join-request-actions{display:flex;flex-wrap:wrap;gap:.4rem}
+    .btn-small{padding:.35rem .75rem;font-size:.85rem}
     .contestant-join{margin-top:.75rem;padding:.75rem;border-radius:12px;background:#fff;border:1px solid var(--gray200);box-shadow:0 1px 3px rgba(15,23,42,.1);display:flex;flex-direction:column;gap:.5rem}
     .contestant-join label{display:flex;flex-direction:column;gap:.25rem;font-weight:600;font-size:.85rem}
     .contestant-join input{padding:.45rem .6rem;border-radius:8px;border:1px solid var(--gray300);font-size:1rem}
@@ -129,6 +140,10 @@
       <div class="panel" data-role="host-only">
         <h2>Contestants</h2>
         <div id="scoreboardList" class="contestant-list" aria-live="polite"></div>
+        <div id="joinRequestsPanel" class="join-requests" data-role="host-only" hidden aria-live="polite">
+          <h3>Join requests</h3>
+          <div id="joinRequestsList" class="join-requests-list"></div>
+        </div>
         <div id="networkStatus" class="status"></div>
         <div id="hostRoomInfo" class="network-card" data-role="host-only" hidden>
           <div>
@@ -350,6 +365,7 @@
   let contestantAssignedKey = null;
   let contestantJoined = false;
   let joinPending = false;
+  let contestantPendingRequestId = null;
   let connectionStatusMessage = '';
   let connectionSummaryMessage = '';
 
@@ -378,6 +394,8 @@
   const revealBtn = document.getElementById('revealBtn');
   const closeBtn = document.getElementById('closeBtn');
   const scoreboardList = document.getElementById('scoreboardList');
+  const joinRequestsPanel = document.getElementById('joinRequestsPanel');
+  const joinRequestsList = document.getElementById('joinRequestsList');
   const networkStatusEl = document.getElementById('networkStatus');
   const buzzerControls = document.getElementById('buzzerControls');
   const buzzerStatus = document.getElementById('buzzerStatus');
@@ -422,6 +440,7 @@
   const tagEls = new Map();
   const buzzerBtnEls = new Map();
   const keyToContestant = new Map();
+  const pendingJoinRequests = new Map();
 
   const CLIENT_ID = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const CHANNEL_NAME = 'esg-jeopardy-sync';
@@ -534,6 +553,124 @@
     if(contestantClientStatus) contestantClientStatus.textContent = text || '';
   }
 
+  function clearJoinRequests(){
+    pendingJoinRequests.clear();
+    if(joinRequestsPanel) joinRequestsPanel.setAttribute('hidden','');
+    if(joinRequestsList) joinRequestsList.innerHTML = '';
+  }
+
+  function respondToJoinRequest(requestId, decision){
+    if(!IS_HOST || !requestId) return;
+    const entry = pendingJoinRequests.get(requestId);
+    if(entry){
+      entry.working = true;
+      pendingJoinRequests.set(requestId, entry);
+    }
+    renderJoinRequests();
+    const action = decision === 'approve' ? 'approve-contestant' : 'deny-contestant';
+    sendRealtime({ action, payload: { requestId } }, { requireHostReady: true });
+  }
+
+  function renderJoinRequests(){
+    if(!IS_HOST || !joinRequestsPanel || !joinRequestsList) return;
+    const entries = Array.from(pendingJoinRequests.values()).sort((a,b)=>(a.requestedAt||0)-(b.requestedAt||0));
+    joinRequestsList.innerHTML = '';
+    if(entries.length === 0){
+      joinRequestsPanel.setAttribute('hidden','');
+      return;
+    }
+    joinRequestsPanel.removeAttribute('hidden');
+    entries.forEach(entry=>{
+      if(!entry || !entry.requestId) return;
+      const item = document.createElement('div');
+      item.className = 'join-request-item';
+
+      const info = document.createElement('div');
+      info.className = 'join-request-info';
+      const nameEl = document.createElement('span');
+      nameEl.className = 'join-request-name';
+      nameEl.textContent = entry.name || 'Contestant';
+      info.appendChild(nameEl);
+      const meta = document.createElement('span');
+      meta.className = 'join-request-meta';
+      meta.textContent = 'Waiting for host approval';
+      info.appendChild(meta);
+      item.appendChild(info);
+
+      const actions = document.createElement('div');
+      actions.className = 'join-request-actions';
+      const acceptBtn = document.createElement('button');
+      acceptBtn.type = 'button';
+      acceptBtn.className = 'btn btn-primary btn-small';
+      acceptBtn.textContent = 'Accept';
+      acceptBtn.disabled = !!entry.working;
+      acceptBtn.addEventListener('click', ()=>respondToJoinRequest(entry.requestId, 'approve'));
+      actions.appendChild(acceptBtn);
+
+      const denyBtn = document.createElement('button');
+      denyBtn.type = 'button';
+      denyBtn.className = 'btn btn-alt btn-small';
+      denyBtn.textContent = 'Decline';
+      denyBtn.disabled = !!entry.working;
+      denyBtn.addEventListener('click', ()=>respondToJoinRequest(entry.requestId, 'deny'));
+      actions.appendChild(denyBtn);
+
+      item.appendChild(actions);
+      joinRequestsList.appendChild(item);
+    });
+  }
+
+  function handleJoinRequestAdded(data){
+    if(!IS_HOST || !data || !data.requestId) return;
+    pendingJoinRequests.set(data.requestId, {
+      requestId: data.requestId,
+      name: data.name || 'Contestant',
+      requestedAt: data.requestedAt || Date.now(),
+      working: false,
+    });
+    renderJoinRequests();
+    setHostStatus(`${data.name || 'Contestant'} requested to join.`);
+  }
+
+  function handleJoinRequestRemoved(data){
+    if(!IS_HOST || !data || !data.requestId) return;
+    const entry = pendingJoinRequests.get(data.requestId);
+    pendingJoinRequests.delete(data.requestId);
+    renderJoinRequests();
+    if(!entry) return;
+    let message = '';
+    const name = entry.name || 'Contestant';
+    switch(data.reason){
+      case 'approved':
+        message = `Approved ${name}.`;
+        break;
+      case 'denied':
+        message = `Declined ${name}.`;
+        break;
+      case 'left':
+        message = `${name} left the queue.`;
+        break;
+      case 'full':
+        message = `No slots available for ${name}.`;
+        break;
+      default:
+        message = `${name}'s request cleared.`;
+        break;
+    }
+    if(message) setHostStatus(message);
+  }
+
+  function handleJoinRequestError(data){
+    if(!IS_HOST || !data || !data.requestId) return;
+    const entry = pendingJoinRequests.get(data.requestId);
+    if(entry){
+      entry.working = false;
+      pendingJoinRequests.set(data.requestId, entry);
+      renderJoinRequests();
+    }
+    if(data.message) setHostStatus(data.message);
+  }
+
   function updateHostShareLink(){
     if(!IS_HOST) return;
     if(roomCodeDisplay) roomCodeDisplay.textContent = ROOM_CODE && ROOM_CODE.length ? ROOM_CODE : '----';
@@ -619,6 +756,7 @@
     contestantClientId = data && data.clientId ? data.clientId : null;
     contestantSlotId = data && data.slotId ? data.slotId : null;
     contestantAssignedKey = data && data.key ? data.key : null;
+    contestantPendingRequestId = null;
     if(activeContestantName){
       activeContestantName.textContent = data && data.name ? data.name : 'Contestant';
     }
@@ -643,8 +781,17 @@
     contestantJoined = false;
     contestantClientId = null;
     contestantSlotId = null;
+    contestantPendingRequestId = null;
     const message = data && data.message ? data.message : 'Unable to join. Try again.';
     setJoinFeedback(message);
+    setContestantStatus(message);
+  }
+
+  function handleJoinPending(data){
+    joinPending = true;
+    contestantPendingRequestId = data && data.requestId ? data.requestId : null;
+    setJoinFeedback('Waiting for the host to approve…');
+    setContestantStatus('Waiting for the host to approve your request.');
   }
 
   function handleRealtimeMessage(message){
@@ -657,6 +804,7 @@
             ROOM_CODE = sanitizeRoomCode(message.roomCode) || ROOM_CODE;
           }
           hostRegistered = true;
+          clearJoinRequests();
           updateHostShareLink();
           setHostStatus('Host connected. Share the link below.');
           setNetworkStatus('Connected to buzzer server.');
@@ -667,6 +815,15 @@
         break;
       case 'contestant-joined':
         if(IS_HOST) assignContestantSlot(message.slotId, message);
+        break;
+      case 'contestant-requested':
+        handleJoinRequestAdded(message);
+        break;
+      case 'contestant-request-removed':
+        handleJoinRequestRemoved(message);
+        break;
+      case 'contestant-request-error':
+        handleJoinRequestError(message);
         break;
       case 'contestant-left':
         if(IS_HOST){
@@ -697,6 +854,9 @@
         if(joinGameBtn) joinGameBtn.disabled = false;
         handleJoinAccepted(message);
         break;
+      case 'join-pending':
+        handleJoinPending(message);
+        break;
       case 'join-denied':
         if(joinGameBtn) joinGameBtn.disabled = false;
         handleJoinDenied(message);
@@ -708,6 +868,7 @@
           contestantJoined = false;
           contestantClientId = null;
           contestantSlotId = null;
+          contestantPendingRequestId = null;
           if(contestantBuzzBtn) contestantBuzzBtn.disabled = true;
           if(contestantClient){
             contestantClient.classList.remove('active');
@@ -766,7 +927,10 @@
 
     realtimeSocket.addEventListener('close', ()=>{
       realtimeOpen = false;
-      if(IS_HOST) hostRegistered = false;
+      if(IS_HOST){
+        hostRegistered = false;
+        clearJoinRequests();
+      }
       setNetworkStatus('Disconnected from buzzer server. Retrying…');
       if(IS_HOST) setHostStatus('Disconnected. Attempting to reconnect…');
       if(!IS_HOST){
@@ -775,6 +939,7 @@
         contestantJoined = false;
         contestantClientId = null;
         contestantSlotId = null;
+        contestantPendingRequestId = null;
         if(contestantBuzzBtn) contestantBuzzBtn.disabled = true;
         if(contestantClient){
           contestantClient.classList.remove('active');

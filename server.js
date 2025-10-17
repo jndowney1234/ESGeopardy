@@ -43,6 +43,7 @@ function createRoom(code) {
     slots: new Map(),
     buzzersOpen: false,
     activeResponder: null,
+    pendingJoins: new Map(), // requestId -> { ws, name }
   };
   SLOT_IDS.forEach(slotId => room.slots.set(slotId, null));
   rooms.set(code, room);
@@ -71,6 +72,26 @@ function broadcastToContestants(room, payload) {
   room.contestants.forEach(entry => {
     send(entry.ws, payload);
   });
+}
+
+function notifyJoinRequestRemoval(room, requestId, reason) {
+  if (!room || !room.host || room.host.readyState !== WebSocket.OPEN) return;
+  send(room.host, { type: 'contestant-request-removed', requestId, reason });
+}
+
+function clearPendingRequests(room, reason) {
+  if (!room) return;
+  room.pendingJoins.forEach(({ ws: clientWs }) => {
+    if (clientWs && clientWs.readyState === WebSocket.OPEN) {
+      clientWs.pendingRequestId = null;
+      send(clientWs, {
+        type: 'join-denied',
+        message: reason || 'Host disconnected. Try joining again soon.',
+      });
+      try { clientWs.close(); } catch (err) { /* ignore */ }
+    }
+  });
+  room.pendingJoins.clear();
 }
 
 function assignSlot(room, name, ws) {
@@ -117,6 +138,7 @@ function handleRegisterHost(ws, message) {
   });
   room.contestants.clear();
   room.slots.forEach((_, slotId) => room.slots.set(slotId, null));
+  clearPendingRequests(room, 'Host restarted the room. Please request to join again.');
 
   ws.isHost = true;
   ws.roomCode = room.code;
@@ -159,31 +181,100 @@ function handleJoinContestant(ws, message) {
     send(ws, { type: 'join-denied', message: 'Room not found. Ask the host for a new code.' });
     return;
   }
-  const assignment = assignSlot(room, name || 'Contestant', ws);
-  if (!assignment) {
-    send(ws, { type: 'join-denied', message: 'All contestant slots are full.' });
+  ws.roomCode = room.code;
+  const existingRequest = ws.pendingRequestId && room.pendingJoins.get(ws.pendingRequestId);
+  if (existingRequest) {
+    // update name if changed
+    existingRequest.name = name || existingRequest.name;
+    room.pendingJoins.set(ws.pendingRequestId, existingRequest);
     return;
   }
-  ws.isContestant = true;
-  ws.roomCode = room.code;
-  ws.clientId = assignment.clientId;
+  const requestId = generateClientId();
+  room.pendingJoins.set(requestId, {
+    ws,
+    name: name || 'Contestant',
+  });
+  ws.pendingRequestId = requestId;
+  send(ws, { type: 'join-pending', requestId });
+  if (room.host && room.host.readyState === WebSocket.OPEN) {
+    send(room.host, {
+      type: 'contestant-requested',
+      requestId,
+      name: name || 'Contestant',
+      requestedAt: Date.now(),
+    });
+  }
+}
 
-  send(ws, {
+function handleApproveContestant(ws, message) {
+  const room = getRoom(ws.roomCode);
+  if (!room || room.host !== ws || !message || typeof message !== 'object') return;
+  const payload = message.payload || {};
+  const requestId = payload.requestId || message.requestId;
+  if (!requestId) return;
+  const request = room.pendingJoins.get(requestId);
+  if (!request) {
+    send(ws, { type: 'contestant-request-error', requestId, message: 'Request no longer available.' });
+    return;
+  }
+  room.pendingJoins.delete(requestId);
+  const contestantWs = request.ws;
+  const name = request.name || 'Contestant';
+  if (!contestantWs || contestantWs.readyState !== WebSocket.OPEN) {
+    notifyJoinRequestRemoval(room, requestId, 'left');
+    return;
+  }
+  const assignment = assignSlot(room, name, contestantWs);
+  if (!assignment) {
+    contestantWs.pendingRequestId = null;
+    send(contestantWs, { type: 'join-denied', message: 'All contestant slots are full. Ask the host to free a slot and try again.' });
+    notifyJoinRequestRemoval(room, requestId, 'full');
+    return;
+  }
+
+  contestantWs.isContestant = true;
+  contestantWs.roomCode = room.code;
+  contestantWs.clientId = assignment.clientId;
+  contestantWs.pendingRequestId = null;
+
+  send(contestantWs, {
     type: 'join-accepted',
     slotId: assignment.slotId,
     clientId: assignment.clientId,
     key: SLOT_KEYS[assignment.slotId] || '',
-    name: name || `Contestant ${assignment.slotId.split('-')[1] || ''}`,
+    name,
   });
+
+  notifyJoinRequestRemoval(room, requestId, 'approved');
 
   if (room.host && room.host.readyState === WebSocket.OPEN) {
     send(room.host, {
       type: 'contestant-joined',
       slotId: assignment.slotId,
       clientId: assignment.clientId,
-      name: name || `Contestant ${assignment.slotId.split('-')[1] || ''}`,
+      name,
     });
   }
+}
+
+function handleDenyContestant(ws, message) {
+  const room = getRoom(ws.roomCode);
+  if (!room || room.host !== ws || !message || typeof message !== 'object') return;
+  const payload = message.payload || {};
+  const requestId = payload.requestId || message.requestId;
+  if (!requestId) return;
+  const request = room.pendingJoins.get(requestId);
+  if (!request) {
+    send(ws, { type: 'contestant-request-error', requestId, message: 'Request no longer available.' });
+    return;
+  }
+  room.pendingJoins.delete(requestId);
+  const contestantWs = request.ws;
+  if (contestantWs && contestantWs.readyState === WebSocket.OPEN) {
+    contestantWs.pendingRequestId = null;
+    send(contestantWs, { type: 'join-denied', message: 'Host declined your request.' });
+  }
+  notifyJoinRequestRemoval(room, requestId, 'denied');
 }
 
 function handleContestantBuzz(ws, message) {
@@ -235,6 +326,12 @@ function handleMessage(ws, raw) {
     case 'contestant-buzz':
       handleContestantBuzz(ws, data);
       break;
+    case 'approve-contestant':
+      handleApproveContestant(ws, data);
+      break;
+    case 'deny-contestant':
+      handleDenyContestant(ws, data);
+      break;
     default:
       break;
   }
@@ -245,6 +342,7 @@ wss.on('connection', (ws) => {
   ws.isContestant = false;
   ws.roomCode = null;
   ws.clientId = null;
+  ws.pendingRequestId = null;
 
   ws.on('message', (message) => handleMessage(ws, message));
 
@@ -261,10 +359,16 @@ wss.on('connection', (ws) => {
         room.host = null;
         room.buzzersOpen = false;
         room.activeResponder = null;
+        clearPendingRequests(room, 'Host disconnected. Try joining again soon.');
       }
-    } else if (ws.isContestant && ws.roomCode && ws.clientId) {
+    } else if (ws.roomCode) {
       const room = getRoom(ws.roomCode);
-      if (room && room.contestants.has(ws.clientId)) {
+      if (!room) return;
+      if (ws.pendingRequestId && room.pendingJoins.has(ws.pendingRequestId)) {
+        room.pendingJoins.delete(ws.pendingRequestId);
+        notifyJoinRequestRemoval(room, ws.pendingRequestId, 'left');
+      }
+      if (ws.isContestant && ws.clientId && room.contestants.has(ws.clientId)) {
         const entry = room.contestants.get(ws.clientId);
         room.contestants.delete(ws.clientId);
         const slotId = entry && entry.slotId ? entry.slotId : null;
