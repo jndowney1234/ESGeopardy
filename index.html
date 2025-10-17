@@ -47,6 +47,7 @@
     .final-toggle{margin-top:1rem;padding:1rem;border-radius:12px;background:var(--indigo50);border:1px solid var(--indigo100);cursor:pointer;user-select:none}
 
     input[type="url"]{padding:.25rem .5rem;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem;width:280px}
+    select{padding:.25rem .5rem;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem}
     label{font-size:.85rem}
     .status{margin-top:.5rem;font-size:.8rem;font-style:italic;color:#4b5563}
     .control-panel{display:grid;gap:1rem;margin-top:1.5rem}
@@ -159,8 +160,14 @@
         </div>
         <div id="doublePanel" class="double-panel" data-role="host-only" hidden aria-live="polite" style="display:none">
           <h3>Daily Double!</h3>
-          <p class="muted" style="margin:0;font-size:.85rem">Set the wager amount before revealing the clue.</p>
+          <p class="muted" style="margin:0;font-size:.85rem">Choose who found the Daily Double and set their wager before revealing the clue.</p>
           <div class="double-panel-controls">
+            <label for="doubleContestantSelect" style="display:flex;flex-direction:column;gap:.25rem">
+              <span>Contestant</span>
+              <select id="doubleContestantSelect">
+                <option value="">Select contestant</option>
+              </select>
+            </label>
             <label for="doubleInput" style="display:flex;flex-direction:column;gap:.25rem">
               <span>Wager amount</span>
               <input id="doubleInput" type="number" min="0" step="50" inputmode="numeric" />
@@ -275,6 +282,7 @@
     col.clues.forEach(clue=>{
       if(typeof clue.baseValue !== 'number') clue.baseValue = clue.value;
       clue.wager = undefined;
+      clue.doubleContestantId = undefined;
     });
   });
 
@@ -353,7 +361,7 @@
   let activeTile = null; // {col,row}
   let buzzersEnabled = false;
   let currentResponder = null;
-  let pendingDouble = null; // {col,row}
+  let pendingDouble = null; // {col,row,contestantId}
 
   // DOM refs
   const boardEl = document.getElementById('board');
@@ -380,6 +388,7 @@
   const clearBuzzBtn = document.getElementById('clearBuzz');
   const revealTileBtn = document.getElementById('revealTile');
   const doublePanel = document.getElementById('doublePanel');
+  const doubleContestantSelect = document.getElementById('doubleContestantSelect');
   const doubleInput = document.getElementById('doubleInput');
   const doubleConfirmBtn = document.getElementById('doubleConfirm');
   const doubleDefaultBtn = document.getElementById('doubleDefault');
@@ -1012,12 +1021,39 @@
     }
   }
 
+  function populateDoubleContestantSelect(selectedId){
+    if(!doubleContestantSelect) return;
+    doubleContestantSelect.innerHTML = '';
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = 'Select contestant';
+    if(!selectedId) placeholder.selected = true;
+    doubleContestantSelect.appendChild(placeholder);
+    CONTESTANTS.forEach(contestant=>{
+      const option = document.createElement('option');
+      option.value = contestant.id;
+      option.textContent = contestant.name;
+      if(contestant.id === selectedId) option.selected = true;
+      doubleContestantSelect.appendChild(option);
+    });
+    if(selectedId){
+      doubleContestantSelect.value = selectedId;
+    } else {
+      doubleContestantSelect.value = '';
+    }
+  }
+
   function showDoubleWagerPanel(colIdx,rowIdx){
     if(!doublePanel) return;
     doublePanel.style.display = 'flex';
     doublePanel.removeAttribute('aria-hidden');
     const clue = BOARD[colIdx] && BOARD[colIdx].clues[rowIdx];
     const defaultValue = clue ? getClueValue(clue) || clue.baseValue || 0 : 0;
+    const existingContestant = clue ? clue.doubleContestantId : null;
+    populateDoubleContestantSelect(existingContestant);
+    if(pendingDouble){
+      pendingDouble.contestantId = existingContestant || null;
+    }
     if(doubleInput){
       doubleInput.value = defaultValue;
       requestAnimationFrame(()=>{
@@ -1045,12 +1081,12 @@
   }
 
   function beginDoubleWager(colIdx,rowIdx){
-    pendingDouble = { col: colIdx, row: rowIdx };
+    pendingDouble = { col: colIdx, row: rowIdx, contestantId: null };
     const btn = tileBtn(colIdx,rowIdx);
     if(btn) btn.disabled = true;
     if(IS_HOST){
       showDoubleWagerPanel(colIdx,rowIdx);
-      setIndicator('Daily Double! Set a wager before reading the clue.', 'info');
+      setIndicator('Daily Double! Choose the contestant and set their wager.', 'info');
     } else {
       setIndicator('Daily Double! Waiting for the host to set a wager.', 'info');
     }
@@ -1059,10 +1095,14 @@
   function finalizeDoubleWager(colIdx,rowIdx,options={}){
     const clue = BOARD[colIdx] && BOARD[colIdx].clues[rowIdx];
     if(!clue) return;
+    if(options.contestantId){
+      clue.doubleContestantId = options.contestantId;
+    }
     const amount = getClueValue(clue);
+    const contestantId = clue.doubleContestantId || null;
     if(IS_HOST && options.broadcast !== false){
-      broadcast('doubleWager',{colIdx,rowIdx,value:amount});
-      broadcast('setTileState',{colIdx,rowIdx,state:'clue',value:amount});
+      broadcast('doubleWager',{colIdx,rowIdx,value:amount,contestantId});
+      broadcast('setTileState',{colIdx,rowIdx,state:'clue',value:amount,contestantId});
     }
     setTileState(colIdx,rowIdx,'clue',{...options,broadcast:false});
     updateRemaining();
@@ -1073,6 +1113,19 @@
     const { col, row } = pendingDouble;
     const clue = BOARD[col] && BOARD[col].clues[row];
     if(!clue) return;
+    const selectedContestant = (pendingDouble && pendingDouble.contestantId) || (doubleContestantSelect ? doubleContestantSelect.value : '');
+    if(!selectedContestant){
+      setIndicator('Select the contestant who uncovered the Daily Double before locking the wager.', 'warn');
+      if(doubleContestantSelect){
+        try{ doubleContestantSelect.focus({ preventScroll: true }); }catch(_){ /* ignore */ }
+      }
+      return;
+    }
+    const contestant = CONTESTANTS.find(c=>c.id===selectedContestant);
+    if(!contestant){
+      setIndicator('Unknown contestant selected for the Daily Double. Please pick again.', 'warn');
+      return;
+    }
     let amount = null;
     if(useDefault){
       amount = clue.baseValue ?? clue.value ?? 0;
@@ -1081,9 +1134,10 @@
       amount = parsed !== null ? parsed : (clue.baseValue ?? clue.value ?? 0);
     }
     clue.wager = amount;
+    clue.doubleContestantId = contestant.id;
     pendingDouble = null;
     hideDoublePanel();
-    finalizeDoubleWager(col,row);
+    finalizeDoubleWager(col,row,{contestantId: contestant.id});
   }
 
   function updateHostControls(){
@@ -1115,6 +1169,13 @@
         buzzerBtn.setAttribute('aria-label', `Buzz for ${contestant.name} (key ${contestant.key})`);
       }
     });
+    if(doublePanel && doublePanel.style.display !== 'none'){
+      const selectedId = (pendingDouble && pendingDouble.contestantId) || (doubleContestantSelect ? doubleContestantSelect.value : null);
+      populateDoubleContestantSelect(selectedId || null);
+      if(pendingDouble){
+        pendingDouble.contestantId = (doubleContestantSelect && doubleContestantSelect.value) ? doubleContestantSelect.value : null;
+      }
+    }
     updateNetworkSummary();
   }
 
@@ -1200,8 +1261,24 @@
   }
 
   function handleBuzzerStateForTile(colIdx,rowIdx,state,options={}){
+    const clue = BOARD[colIdx] && BOARD[colIdx].clues[rowIdx];
     if(state==='clue'){
       activeTile = {col:colIdx,row:rowIdx};
+      if(isDoubleAt(colIdx,rowIdx)){
+        const contestantId = clue ? clue.doubleContestantId : null;
+        const contestant = contestantId ? CONTESTANTS.find(c=>c.id===contestantId) : null;
+        currentResponder = contestant || null;
+        disableBuzzers('Buzzers locked for Daily Double', options);
+        const wagerAmount = clue ? getClueValue(clue) || 0 : 0;
+        if(contestant){
+          setIndicator(`${contestant.name} Daily Double for ${formatScore(wagerAmount)}.`, 'active', options);
+        } else {
+          setIndicator('Daily Double ready. Awaiting wager.', 'info', options);
+        }
+        updateContestantDisplay();
+        updateHostControls();
+        return;
+      }
       prepareBuzzersForClue(options);
       return;
     }
@@ -1294,37 +1371,56 @@
   function handleCorrect(){
     if(!currentResponder || !activeTile) return;
     const contestant = currentResponder;
-    const value = getClueValue(BOARD[activeTile.col].clues[activeTile.row]) || 0;
+    const clue = BOARD[activeTile.col] && BOARD[activeTile.col].clues[activeTile.row];
+    const value = getClueValue(clue) || 0;
+    const isDouble = isDoubleAt(activeTile.col,activeTile.row);
     contestant.score += value;
     currentResponder = null;
     updateContestantDisplay();
     updateHostControls();
-    disableBuzzers('Buzzers locked');
-    setIndicator(`${contestant.name} is correct! Reveal when ready.`, 'success');
+    disableBuzzers(isDouble ? 'Buzzers locked for Daily Double' : 'Buzzers locked');
+    if(isDouble){
+      setIndicator(`${contestant.name} wins the Daily Double! Reveal when ready.`, 'success');
+    } else {
+      setIndicator(`${contestant.name} is correct! Reveal when ready.`, 'success');
+    }
     broadcastScores();
   }
 
   function handleIncorrect(){
     if(!currentResponder || !activeTile) return;
     const contestant = currentResponder;
-    const value = getClueValue(BOARD[activeTile.col].clues[activeTile.row]) || 0;
+    const clue = BOARD[activeTile.col] && BOARD[activeTile.col].clues[activeTile.row];
+    const value = getClueValue(clue) || 0;
+    const isDouble = isDoubleAt(activeTile.col,activeTile.row);
     contestant.score -= value;
     currentResponder = null;
     updateContestantDisplay();
     updateHostControls();
-    enableBuzzers('Buzzers reopened');
-    setIndicator(`${contestant.name} is incorrect. Buzzers reopened.`, 'warn');
+    if(isDouble){
+      disableBuzzers('Buzzers locked for Daily Double');
+      setIndicator(`${contestant.name} misses the Daily Double. Reveal when ready.`, 'warn');
+    } else {
+      enableBuzzers('Buzzers reopened');
+      setIndicator(`${contestant.name} is incorrect. Buzzers reopened.`, 'warn');
+    }
     broadcastScores();
   }
 
   function handleClear(){
     if(!currentResponder || !activeTile) return;
     const name = currentResponder.name;
+    const isDouble = isDoubleAt(activeTile.col,activeTile.row);
     currentResponder = null;
     updateContestantDisplay();
     updateHostControls();
-    enableBuzzers('Buzzers reopened');
-    setIndicator(`Buzz cleared for ${name}. Awaiting buzz.`, 'info');
+    if(isDouble){
+      disableBuzzers('Buzzers locked for Daily Double');
+      setIndicator(`Buzz cleared for ${name}. Daily Double still in play.`, 'info');
+    } else {
+      enableBuzzers('Buzzers reopened');
+      setIndicator(`Buzz cleared for ${name}. Awaiting buzz.`, 'info');
+    }
   }
 
   function revealActiveTile(options={}){
@@ -1347,11 +1443,14 @@
         break;
       case 'setTileState':
         if(payload){
-          if(Object.prototype.hasOwnProperty.call(payload,'value')){
-            const clue = BOARD[payload.colIdx] && BOARD[payload.colIdx].clues[payload.rowIdx];
-            if(clue){
+          const clue = BOARD[payload.colIdx] && BOARD[payload.colIdx].clues[payload.rowIdx];
+          if(clue){
+            if(Object.prototype.hasOwnProperty.call(payload,'value')){
               clue.wager = typeof payload.value === 'number' ? payload.value : clue.baseValue;
               if(!IS_HOST) pendingDouble = null;
+            }
+            if(Object.prototype.hasOwnProperty.call(payload,'contestantId')){
+              clue.doubleContestantId = payload.contestantId || null;
             }
           }
           setTileState(payload.colIdx,payload.rowIdx,payload.state,{fromSync:true,broadcast:false});
@@ -1364,6 +1463,9 @@
           if(clue){
             clue.wager = typeof payload.value === 'number' ? payload.value : clue.baseValue;
             if(!IS_HOST) pendingDouble = null;
+            if(Object.prototype.hasOwnProperty.call(payload,'contestantId')){
+              clue.doubleContestantId = payload.contestantId || null;
+            }
           }
         }
         break;
@@ -1546,7 +1648,7 @@
     showFinal = false;
     finalRevealed = false;
     CONTESTANTS.forEach(contestant=>{ contestant.score = 0; });
-    BOARD.forEach(col=>col.clues.forEach(clue=>{ clue.wager = undefined; }));
+    BOARD.forEach(col=>col.clues.forEach(clue=>{ clue.wager = undefined; clue.doubleContestantId = undefined; }));
     pendingDouble = null;
     hideDoublePanel();
     resetBuzzerSystem(fromSync ? {broadcast:false} : {});
@@ -1625,6 +1727,13 @@
   clearBuzzBtn.addEventListener('click', ()=>{ if(!IS_HOST) return; handleClear(); });
   if(doubleConfirmBtn) doubleConfirmBtn.addEventListener('click', ()=>{ if(!IS_HOST) return; submitDoubleWager(); });
   if(doubleDefaultBtn) doubleDefaultBtn.addEventListener('click', ()=>{ if(!IS_HOST) return; submitDoubleWager({useDefault:true}); });
+  if(doubleContestantSelect) doubleContestantSelect.addEventListener('change', (event)=>{
+    if(!IS_HOST) return;
+    const value = event && event.target ? event.target.value : '';
+    if(pendingDouble){
+      pendingDouble.contestantId = value || null;
+    }
+  });
   if(doubleInput) doubleInput.addEventListener('keydown', (event)=>{
     if(event.key === 'Enter' && IS_HOST){
       event.preventDefault();
