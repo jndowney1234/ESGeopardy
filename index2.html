@@ -1,0 +1,1522 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ESGeopardy — 2024 ESG Edition</title>
+  <style>
+    :root{
+      --bg:#ffffff;--text:#111827;--muted:#6b7280;--indigo50:#eef2ff;--indigo100:#e0e7ff;
+      --blue700:#1d4ed8;--blue800:#1e40af;--amber200:#fde68a;--amber300:#fcd34d;--emerald100:#d1fae5;--emerald200:#a7f3d0;
+      --gray200:#e5e7eb;--gray300:#d1d5db;--fuchsia700:#a21caf;--overlay:rgba(0,0,0,.5);
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial,"Noto Sans",sans-serif;}
+    .container{max-width:72rem;margin:0 auto;padding:1.5rem}
+    h1{font-size:1.875rem;line-height:2.25rem;margin:0 0 .25rem;font-weight:700}
+    p{margin:.25rem 0}
+    .muted{color:var(--muted)}
+    .row{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
+    .btn{appearance:none;border:0;border-radius:12px;padding:.5rem 1rem;cursor:pointer;font-weight:600;min-height:44px;min-width:44px}
+    .btn-primary{background:#111827;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.15)}
+    .btn-primary:hover{box-shadow:0 6px 12px rgba(0,0,0,.18)}
+    .btn-primary:disabled{opacity:.5;cursor:not-allowed}
+    .btn-alt{background:var(--gray200)}
+    .btn-alt:disabled{opacity:.5;cursor:not-allowed}
+    .btn-small{padding:.35rem .75rem;font-size:.85rem}
+    .grid{display:grid;grid-template-columns:1fr;gap:.75rem}
+    @media (min-width:640px){.grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+    @media (max-width:640px){
+      .grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem}
+      .tile{min-height:80px;font-size:.85rem}
+      .cat{font-size:.75rem;padding:.5rem}
+    }
+    .col{display:flex;flex-direction:column;gap:.75rem}
+    .cat{padding:.75rem;text-align:center;border:1px solid var(--indigo100);background:var(--indigo50);border-radius:16px;font-weight:600}
+    .tile{position:relative;min-height:110px;padding:.75rem;border-radius:16px;text-align:center;border:1px solid transparent;transition:.15s;cursor:pointer}
+    .tile.hidden{background:var(--blue700);color:#fff;border-color:var(--blue800)}
+    .tile.hidden:hover{filter:brightness(.95)}
+    .tile.clue{background:var(--amber200);color:#111827;border-color:var(--amber300)}
+    .tile.clue:hover{filter:brightness(.98)}
+    .tile.response{background:var(--emerald100);color:#111827;border-color:var(--emerald200)}
+    .tile.response:hover{filter:brightness(.98)}
+    .tile.done{background:var(--emerald100);color:#065f46;border-color:var(--emerald200);cursor:not-allowed}
+    .tile.done .content{font-weight:600}
+    .tile[disabled]{cursor:not-allowed}
+    .value-tag{position:absolute;right:.75rem;bottom:.5rem;opacity:.8;font-size:.875rem}
+    .flash{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;border-radius:16px;background:rgba(162,28,175,.9);color:#fff;text-align:center;padding:.75rem;animation:pulse 1s infinite}
+    @keyframes pulse{0%{opacity:.95}50%{opacity:.65}100%{opacity:.95}}
+
+    .tips summary{cursor:pointer}
+
+    /* Skip link */
+    .skip-link{position:absolute;top:-40px;left:0;background:#000;color:#fff;padding:8px;z-index:100;text-decoration:none}
+    .skip-link:focus{top:0}
+
+    /* Modal */
+    .modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--overlay);padding:1rem;z-index:50}
+    .card{width:100%;max-width:42rem;background:#fff;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.2);padding:1.25rem}
+    .final-toggle{margin-top:1rem;padding:1rem;border-radius:12px;background:var(--indigo50);border:1px solid var(--indigo100);cursor:pointer;user-select:none}
+
+    input[type="url"],input[type="text"],input[type="number"]{padding:.45rem .6rem;border:1px solid #d1d5db;border-radius:6px;font-size:16px;width:100%;max-width:280px}
+    label{font-size:.85rem}
+    .status{margin-top:.5rem;font-size:.8rem;font-style:italic;color:#4b5563}
+    .control-panel{display:grid;gap:1rem;margin-top:1.5rem}
+    @media (min-width:768px){.control-panel{grid-template-columns:2fr 3fr}}
+    .panel{padding:1rem;border-radius:16px;border:1px solid var(--indigo100);background:var(--indigo50)}
+    .panel h2{margin:0 0 .5rem;font-size:1.125rem}
+    .contestant-list{display:grid;gap:.5rem}
+    .contestant{display:flex;justify-content:space-between;align-items:center;padding:.75rem 1rem;border-radius:12px;background:#fff;border:1px solid var(--gray200);box-shadow:0 1px 2px rgba(15,23,42,.08);transition:.15s;position:relative}
+    .contestant.active{border-color:var(--amber300);box-shadow:0 4px 10px rgba(252,211,77,.35);background:var(--amber200)}
+    .contestant.connected{border-color:var(--emerald200);box-shadow:0 4px 12px rgba(16,185,129,.25)}
+    .contestant-name{font-weight:600;display:flex;align-items:center;gap:.5rem}
+    .contestant-tag{font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;padding:.15rem .4rem;border-radius:999px;background:var(--gray200);color:var(--muted)}
+    .contestant.connected .contestant-tag{background:var(--emerald100);color:#047857}
+    .contestant-score{font-variant-numeric:tabular-nums;font-weight:600}
+    .buzzer-grid{display:flex;flex-wrap:wrap;gap:.5rem}
+    .buzzer-btn{background:#fff;color:var(--text);border:1px solid var(--gray300);box-shadow:0 1px 2px rgba(15,23,42,.08)}
+    .buzzer-btn:disabled{opacity:.55;cursor:not-allowed}
+    .buzzer-note{margin-top:.25rem;font-size:.8rem;color:var(--muted)}
+    .buzzer-status{margin-top:.5rem;font-size:.85rem;font-weight:600}
+    .buzzer-indicator{margin-top:.5rem;font-size:1rem;font-weight:600;padding:.5rem .75rem;border-radius:12px;display:none}
+    .buzzer-indicator[data-tone="ready"]{display:block;background:var(--emerald100);color:#065f46}
+    .buzzer-indicator[data-tone="active"]{display:block;background:var(--amber200);color:#78350f}
+    .buzzer-indicator[data-tone="success"]{display:block;background:var(--emerald100);color:#065f46}
+    .buzzer-indicator[data-tone="warn"]{display:block;background:#fee2e2;color:#991b1b}
+    .buzzer-indicator[data-tone="info"]{display:block;background:#e0e7ff;color:var(--blue800)}
+    .host-controls{margin-top:.75rem;padding:.75rem;border-radius:12px;background:#fff;border:1px dashed var(--gray300)}
+    .host-controls h3{margin:0 0 .5rem;font-size:1rem}
+    .host-controls .btn{min-width:6.5rem}
+    .host-controls .btn:disabled{opacity:.5;cursor:not-allowed}
+    .host-controls.active{border-style:solid;border-color:var(--amber300);box-shadow:0 0 0 2px rgba(252,211,77,.35)}
+    body.role-contestant [data-role="host-only"]{display:none !important}
+    .double-panel{margin-top:.75rem;padding:.75rem;border-radius:12px;background:#fff;border:1px solid var(--amber300);display:flex;flex-direction:column;gap:.5rem;box-shadow:0 4px 12px rgba(252,211,77,.25)}
+    .double-panel h3{margin:0;font-size:1rem;color:var(--blue800)}
+    .double-panel label{font-weight:600}
+    .double-panel-controls{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
+    .network-card{margin-top:.75rem;padding:.75rem;border-radius:12px;background:#fff;border:1px solid var(--gray200);box-shadow:0 1px 3px rgba(15,23,42,.1);display:flex;flex-direction:column;gap:.5rem}
+    .network-code{font-size:1.5rem;font-weight:700;letter-spacing:.25em;text-align:center;padding:.5rem;border-radius:10px;background:var(--indigo50);border:1px solid var(--indigo100)}
+    .share-link{width:100%;padding:.35rem .5rem;border-radius:8px;border:1px solid var(--gray300);font-size:.85rem}
+    .join-requests{margin-top:.75rem;padding:.75rem;border-radius:12px;background:#fff;border:1px solid var(--gray200);box-shadow:0 1px 3px rgba(15,23,42,.1);display:flex;flex-direction:column;gap:.75rem}
+    .join-requests[hidden]{display:none}
+    .join-requests h3{margin:0;font-size:1rem}
+    .join-requests-list{display:flex;flex-direction:column;gap:.5rem}
+    .join-request-item{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding-bottom:.5rem;border-bottom:1px solid var(--gray200)}
+    .join-request-item:last-child{padding-bottom:0;border-bottom:none}
+    .join-request-info{display:flex;flex-direction:column;gap:.15rem}
+    .join-request-name{font-weight:600}
+    .join-request-meta{font-size:.8rem;color:var(--muted)}
+    .join-request-actions{display:flex;flex-wrap:wrap;gap:.4rem}
+    .contestant-join{margin-top:.75rem;padding:.75rem;border-radius:12px;background:#fff;border:1px solid var(--gray200);box-shadow:0 1px 3px rgba(15,23,42,.1);display:flex;flex-direction:column;gap:.5rem}
+    .contestant-join label{display:flex;flex-direction:column;gap:.25rem;font-weight:600;font-size:.85rem}
+    .contestant-join input{padding:.45rem .6rem;border-radius:8px;border:1px solid var(--gray300);font-size:16px}
+    .contestant-client{margin-top:.75rem;padding:.75rem;border-radius:12px;background:#fff;border:1px dashed var(--gray300);display:none;flex-direction:column;gap:.5rem}
+    .contestant-client.active{display:flex}
+    .contestant-client .contestant-name-label{font-weight:700;font-size:1rem}
+    .contestant-client .btn-primary{font-size:1.1rem;padding:.85rem 1.25rem}
+    .contestant-client .status{font-size:.85rem}
+    body.role-contestant #buzzerControls{display:none}
+    body.role-host [data-role="contestant-only"]{display:none !important}
+    body.role-contestant .container{max-width:420px;padding:1.5rem 1rem}
+    body.role-contestant header.row{flex-direction:column;gap:.75rem;justify-content:center !important;align-items:center !important;text-align:center}
+    body.role-contestant header.row > div{width:100%}
+    body.role-contestant .control-panel{display:flex;flex-direction:column;gap:1rem;grid-template-columns:1fr;max-width:420px;margin:0 auto}
+    body.role-contestant .control-panel .panel{display:none}
+    body.role-contestant .control-panel .panel[data-role="contestant-only"]{display:flex}
+    .contestant-panel{flex-direction:column;gap:1rem;align-items:stretch}
+    .contestant-panel h2{margin:0;text-align:center}
+    .contestant-panel .muted{text-align:center}
+    body.role-contestant .contestant-join{padding:0;border:none;box-shadow:none}
+    body.role-contestant .contestant-client{border:none}
+    
+    /* Toast notifications */
+    .toast{position:fixed;bottom:-100px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:.75rem 1.5rem;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.3);transition:bottom .3s ease;z-index:100;max-width:90%;text-align:center}
+    .toast.show{bottom:2rem}
+    .toast.toast-success{background:#10b981}
+    .toast.toast-error{background:#ef4444}
+    .toast.toast-warning{background:#f59e0b}
+    
+    /* Loading spinner */
+    .loading-spinner{display:flex;align-items:center;gap:.5rem;padding:1rem;justify-content:center}
+    .spinner{width:20px;height:20px;border:3px solid var(--gray300);border-top-color:var(--blue700);border-radius:50%;animation:spin 1s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body>
+  <a href="#board" class="skip-link">Skip to game board</a>
+  
+  <div class="container">
+    <header class="row" style="justify-content:space-between;align-items:flex-end;margin-bottom:1rem;">
+      <div>
+        <h1>ESGeopardy — 2024 ESG Edition</h1>
+        <p class="muted" data-role="host-only">Click once to reveal the <strong>clue</strong>, click again to reveal the <strong>correct response</strong>. After that, the tile is marked as <strong>Played</strong>.</p>
+        <p class="muted" data-role="contestant-only" hidden>Enter the room code from the host and your name to connect your remote buzzer.</p>
+      </div>
+      <div class="row" data-role="host-only">
+        <button id="resetBtn" class="btn btn-primary">Reset Board</button>
+        <span id="remainingText" class="muted" style="font-size:.9rem">Remaining tiles: 16</span>
+      </div>
+    </header>
+
+    <div id="board" class="grid" aria-label="Jeopardy board" data-role="host-only"></div>
+
+    <section class="control-panel" aria-label="Scoreboard and buzzer controls">
+      <div class="panel" data-role="host-only">
+        <h2>Contestants</h2>
+        <div id="scoreboardList" class="contestant-list" aria-live="polite"></div>
+        <div id="joinRequestsPanel" class="join-requests" data-role="host-only" hidden aria-live="polite">
+          <h3>Join requests</h3>
+          <div id="joinRequestsList" class="join-requests-list"></div>
+        </div>
+        <div id="networkStatus" class="status"></div>
+        <div id="hostRoomInfo" class="network-card" data-role="host-only" hidden>
+          <div>
+            <strong>Remote buzzer room code</strong>
+            <div id="roomCodeDisplay" class="network-code" aria-live="polite">----</div>
+          </div>
+          <div>
+            <label style="font-weight:600;font-size:.85rem;display:flex;flex-direction:column;gap:.25rem">
+              Share this link with contestants
+              <input id="shareLink" class="share-link" type="text" readonly />
+            </label>
+          </div>
+          <div class="status" id="hostRealtimeStatus">Waiting for connection…</div>
+        </div>
+      </div>
+      <div id="contestantPanel" class="panel contestant-panel" data-role="contestant-only" hidden>
+        <h2>Remote Buzzer</h2>
+        <p class="muted">Enter the room code shared by the host and your name to get ready to buzz in.</p>
+        <div id="contestantJoin" class="contestant-join" data-role="contestant-only" hidden>
+          <label for="joinCodeInput">Room code</label>
+          <input id="joinCodeInput" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" />
+          <label for="contestantNameInput">Your name</label>
+          <input id="contestantNameInput" type="text" maxlength="40" placeholder="e.g., Alex" />
+          <button id="joinGameBtn" class="btn btn-primary" type="button">Join Game</button>
+          <div id="joinStatus" class="status" aria-live="polite"></div>
+        </div>
+        <div id="contestantClient" class="contestant-client" data-role="contestant-only" hidden>
+          <div class="contestant-name-label">Buzzing in as <span id="activeContestantName"></span></div>
+          <button id="contestantBuzzBtn" class="btn btn-primary" type="button" disabled>Buzz In!</button>
+          <div id="contestantClientStatus" class="status" aria-live="polite"></div>
+        </div>
+      </div>
+      <div class="panel" data-role="host-only">
+        <h2>Buzzers</h2>
+        <p class="buzzer-note">Use the buttons below or press keys <strong>1</strong>, <strong>2</strong>, and <strong>3</strong> to buzz for Contestants 1–3.</p>
+        <div id="buzzerControls" class="buzzer-grid"></div>
+        <div id="buzzerStatus" class="buzzer-status" aria-live="polite">Buzzers locked</div>
+        <div id="buzzerIndicator" class="buzzer-indicator" role="status" aria-live="polite" aria-atomic="true"></div>
+        <div id="hostControls" class="host-controls" data-role="host-only" hidden>
+          <h3>Host Controls</h3>
+          <div class="row" style="flex-wrap:wrap;gap:.5rem">
+            <button id="markCorrect" class="btn btn-primary" disabled>Correct</button>
+            <button id="markIncorrect" class="btn btn-alt" disabled>Incorrect</button>
+            <button id="clearBuzz" class="btn btn-alt" disabled>Clear Buzz</button>
+            <button id="revealTile" class="btn btn-primary" disabled>Reveal to contestants</button>
+          </div>
+        </div>
+        <div id="doublePanel" class="double-panel" data-role="host-only" hidden aria-live="polite" style="display:none">
+          <h3>Daily Double!</h3>
+          <p class="muted" style="margin:0;font-size:.85rem">Set the wager amount before revealing the clue.</p>
+          <div class="double-panel-controls">
+            <label for="doubleInput" style="display:flex;flex-direction:column;gap:.25rem">
+              <span>Wager amount</span>
+              <input id="doubleInput" type="number" min="0" step="50" inputmode="numeric" />
+            </label>
+            <button id="doubleConfirm" class="btn btn-primary" type="button">Lock wager</button>
+            <button id="doubleDefault" class="btn btn-alt" type="button">Use default value</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="row" style="justify-content:space-between;margin-top:1.25rem;align-items:flex-start;gap:.75rem" data-role="host-only">
+      <div class="tips muted" style="font-size:.9rem" data-role="host-only" hidden>
+        <details open>
+          <summary>Host tips</summary>
+          <ul style="margin:.5rem 0 .25rem 1.25rem">
+            <li>Keep pace to ~45s per tile to fit an 8-minute round.</li>
+            <li>Read the <strong>clue</strong> aloud; contestants respond in the form of a question.</li>
+            <li>Skip around categories to keep energy high.</li>
+            <li>Use "Reset Board" to reroll the hidden Double Jeopardy tile.</li>
+          </ul>
+        </details>
+      </div>
+      <div class="row" style="gap:.5rem;align-items:center">
+        <button id="finalBtn" class="btn" style="background:var(--fuchsia700);color:#fff">Final Jeopardy</button>
+        <audio id="final-audio" src="JeopardyMusic.mp3" preload="auto" aria-hidden="true"></audio>
+      </div>
+    </section>
+  </div>
+
+  <!-- Final Jeopardy Modal -->
+  <div id="modal" class="modal" style="display:none" data-role="host-only">
+    <div class="card" role="dialog" aria-labelledby="finalTitle" aria-modal="true">
+      <div style="text-align:center">
+        <div class="muted" style="letter-spacing:.15em;font-size:.8rem">FINAL JEOPARDY</div>
+        <div id="finalTitle" style="margin-top:.25rem;font-weight:600;font-size:1.25rem">ESG Theme</div>
+      </div>
+
+      <div id="finalToggle" class="final-toggle" role="button" tabindex="0" aria-pressed="false" title="Click to reveal response">
+        <p id="finalContent" style="margin:0;font-size:1.125rem;line-height:1.6"></p>
+      </div>
+
+      <div class="row" style="justify-content:flex-end;margin-top:.75rem;gap:.5rem;flex-wrap:wrap">
+        <button id="revealBtn" class="btn btn-primary">Reveal Response</button>
+        <button id="closeBtn" class="btn btn-alt">Close</button>
+      </div>
+
+      <p class="muted" style="margin-top:.5rem;font-size:.8rem">Starting Final Jeopardy ends the game and disables the board. Use <strong>Reset Board</strong> to start a new round.</p>
+    </div>
+  </div>
+
+  <script>
+  // =============================================================================
+  // UTILITY FUNCTIONS
+  // =============================================================================
+  
+  function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+      const later = () => {
+        clearTimeout(timeout);
+        func(...args);
+      };
+      clearTimeout(timeout);
+      timeout = setTimeout(later, wait);
+    };
+  }
+
+  function sanitizeHTML(str){
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function sanitizeRoomCode(code){
+    if(!code) return '';
+    const digits = String(code).replace(/[^0-9]/g,'');
+    const ROOM_CODE_LENGTH = 4;
+    if(digits.length < ROOM_CODE_LENGTH) return '';
+    return digits.slice(0, ROOM_CODE_LENGTH);
+  }
+
+  function sanitizeName(name){
+    if(!name) return '';
+    return String(name)
+      .replace(/[<>'"&]/g, '')
+      .replace(/[\n\r]+/g, ' ')
+      .trim()
+      .slice(0, 40);
+  }
+
+  function sanitizeWagerInput(raw){
+    if(raw===undefined || raw===null) return null;
+    const cleaned = String(raw).replace(/[^0-9-]/g,'');
+    if(!cleaned) return null;
+    const amount = parseInt(cleaned,10);
+    if(Number.isNaN(amount)) return null;
+    return Math.max(0,amount);
+  }
+
+  function generateRoomCode(){
+    const ROOM_CODE_LENGTH = 4;
+    const min = Math.pow(10, ROOM_CODE_LENGTH-1);
+    const max = Math.pow(10, ROOM_CODE_LENGTH) - 1;
+    return String(Math.floor(min + Math.random()*(max-min+1)));
+  }
+
+  function pickRandomTile(){
+    return { 
+      col: Math.floor(Math.random()*BOARD.length), 
+      row: Math.floor(Math.random()*BOARD[0].clues.length) 
+    };
+  }
+
+  function formatScore(value){
+    try{
+      return new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(value);
+    }catch(_){
+      return `$${value}`;
+    }
+  }
+
+  function showToast(message, type = 'info'){
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.textContent = sanitizeHTML(message);
+    document.body.appendChild(toast);
+    setTimeout(()=> toast.classList.add('show'), 10);
+    setTimeout(()=> {
+      toast.classList.remove('show');
+      setTimeout(()=> toast.remove(), 300);
+    }, 3000);
+  }
+
+  // =============================================================================
+  // BOARD CONTENT (4 x 4)
+  // =============================================================================
+  
+  const BOARD = [
+    { category: "Planet Positive 🌍", clues: [
+      { value:100, clue:"Turner is working toward this long-term environmental goal, common across the construction industry.", response:"What is Net-Zero Emissions?" },
+      { value:200, clue:"This type of material, such as low-carbon concrete or mass timber, is key to reducing embodied carbon.", response:"What are sustainable building materials?" },
+      { value:300, clue:"Turner's approach to water, waste, and biodiversity shows our commitment to protecting this.", response:"What is the planet (or environment)?" },
+      { value:400, clue:"Electrification of fleets, renewable fuels, and green jobsite innovations are part of this broader strategy.", response:"What is decarbonization?" },
+    ]},
+    { category: "People Power 👥", clues: [
+      { value:100, clue:"Turner's workplace culture is grounded in this value, which means looking out for one another.", response:"What is Active Caring?" },
+      { value:200, clue:"Expanding family leave, wellness programs, and ERGs are all about supporting this.", response:"What is employee well-being?" },
+      { value:300, clue:"Mentorship, career pathways, and leadership programs help develop this.", response:"What is the next generation of leaders?" },
+      { value:400, clue:"The focus of Construction Inclusion Week, and a key Turner priority, is building a culture of this.", response:"What is inclusion (or belonging)?" },
+    ]},
+    { category: "Community Impact 🤝", clues: [
+      { value:100, clue:"Turner partners with local schools, nonprofits, and trade groups to invest in this.", response:"What is the community (or future workforce)?" },
+      { value:200, clue:"Food drives, volunteer days, and building gardens are examples of this type of impact.", response:"What is community service (or engagement)?" },
+      { value:300, clue:"Programs like ACE Extern and YouthConstruct help young people explore careers in this industry.", response:"What is construction?" },
+      { value:400, clue:"Turner's partnerships with small and diverse businesses strengthen this aspect of local economies.", response:"What is economic development?" },
+    ]},
+    { category: "Transforming Industry 🏗️", clues: [
+      { value:100, clue:"Turner has a long history of 'firsts' — like being a founding member of this green building council.", response:"What is the U.S. Green Building Council?" },
+      { value:200, clue:"Innovation summits, AI pilots, and Turner Ventures all help Turner drive this.", response:"What is industry transformation (or innovation)?" },
+      { value:300, clue:"Transparency, ethics, and ISO certifications demonstrate Turner's commitment to this.", response:"What is good governance?" },
+      { value:400, clue:"Collaborating with clients, partners, and global affiliates helps Turner do this across the construction industry.", response:"What is lead change (or set industry standards)?" },
+    ]}
+  ];
+
+  BOARD.forEach(col=>{
+    col.clues.forEach(clue=>{
+      if(typeof clue.baseValue !== 'number') clue.baseValue = clue.value;
+      clue.wager = undefined;
+    });
+  });
+
+  const FINAL = {
+    clue: "This is Turner's guiding vision that connects caring for people, communities, and the planet with building a better future.",
+    response: "What is Building Today to Transform Tomorrow™?",
+  };
+
+  const CONTESTANTS = [
+    { id: 'contestant-1', name: 'Contestant 1', defaultName: 'Contestant 1', key: '1', score: 0, remoteId: null, connected: false },
+    { id: 'contestant-2', name: 'Contestant 2', defaultName: 'Contestant 2', key: '2', score: 0, remoteId: null, connected: false },
+    { id: 'contestant-3', name: 'Contestant 3', defaultName: 'Contestant 3', key: '3', score: 0, remoteId: null, connected: false },
+  ];
+
+  // =============================================================================
+  // GAME STATE MODULE
+  // =============================================================================
+  
+  const GameState = {
+    states: BOARD.map(col=>col.clues.map(()=>"hidden")),
+    doublePos: pickRandomTile(),
+    flashingPos: null,
+    gameEnded: false,
+    showFinal: false,
+    finalRevealed: false,
+    activeTile: null,
+    pendingDouble: null,
+    
+    reset() {
+      this.states = BOARD.map(col=>col.clues.map(()=>"hidden"));
+      this.doublePos = pickRandomTile();
+      this.flashingPos = null;
+      this.gameEnded = false;
+      this.showFinal = false;
+      this.finalRevealed = false;
+      this.activeTile = null;
+      this.pendingDouble = null;
+      CONTESTANTS.forEach(contestant=>{ contestant.score = 0; });
+      BOARD.forEach(col=>col.clues.forEach(clue=>{ clue.wager = undefined; }));
+    },
+    
+    save() {
+      if(!IS_HOST) return;
+      try{
+        const state = {
+          states: this.states,
+          scores: CONTESTANTS.map(c=>({id:c.id, score:c.score})),
+          doublePos: this.doublePos,
+          timestamp: Date.now()
+        };
+        localStorage.setItem('esg-jeopardy-state', JSON.stringify(state));
+      }catch(e){
+        console.warn('Failed to save game state', e);
+      }
+    },
+    
+    load() {
+      if(!IS_HOST) return false;
+      try{
+        const saved = localStorage.getItem('esg-jeopardy-state');
+        if(!saved) return false;
+        const state = JSON.parse(saved);
+        if(Date.now() - state.timestamp > 86400000) return false;
+        
+        if(confirm('Resume previous game?')){
+          this.states = state.states;
+          this.doublePos = state.doublePos;
+          state.scores.forEach(({id, score})=>{
+            const c = CONTESTANTS.find(x=>x.id===id);
+            if(c) c.score = score;
+          });
+          return true;
+        }
+      }catch(e){
+        console.warn('Failed to load game state', e);
+      }
+      return false;
+    }
+  };
+
+  // =============================================================================
+  // BUZZER CONTROLLER MODULE
+  // =============================================================================
+  
+  const BuzzerController = {
+    enabled: false,
+    currentResponder: null,
+    
+    enable(options = {}) {
+      if(GameState.gameEnded || !GameState.activeTile) return;
+      this.enabled = true;
+      buzzerBtnEls.forEach(btn=>{ btn.disabled = false; });
+      const message = options.message || 'Buzzers ready (keys 1-3)';
+      if(buzzerStatus) buzzerStatus.textContent = message;
+      if(IS_HOST && options.broadcast !== false){
+        NetworkManager.sendBuzzersState({ open: true, message });
+      }
+    },
+    
+    disable(options = {}) {
+      this.enabled = false;
+      buzzerBtnEls.forEach(btn=>{ btn.disabled = true; });
+      const message = options.message || 'Buzzers locked';
+      if(buzzerStatus) buzzerStatus.textContent = message;
+      if(IS_HOST && options.broadcast !== false){
+        NetworkManager.sendBuzzersState({ open: false, message });
+      }
+    },
+    
+    reset(options = {}) {
+      GameState.activeTile = null;
+      this.currentResponder = null;
+      this.disable(options);
+      setIndicator('', 'info', options);
+      updateContestantDisplay();
+      updateHostControls();
+    },
+    
+    prepare(options = {}) {
+      if(!GameState.activeTile || GameState.gameEnded) return;
+      this.currentResponder = null;
+      updateContestantDisplay();
+      updateHostControls();
+      this.enable(options);
+      setIndicator('Buzzers open. Awaiting a contestant.', 'ready', options);
+    },
+    
+    handleBuzz(contestant) {
+      if(GameState.gameEnded || !this.enabled || this.currentResponder || !GameState.activeTile) return;
+      this.currentResponder = contestant;
+      this.disable();
+      updateContestantDisplay();
+      updateHostControls();
+      setIndicator(`${contestant.name} buzzed in!`, 'active');
+      if(IS_HOST){
+        NetworkManager.send({ action: 'buzz-result', payload: { contestantId: contestant.id, name: contestant.name } }, { requireHostReady: true });
+      }
+    },
+    
+    handleCorrect() {
+      if(!this.currentResponder || !GameState.activeTile) return;
+      const contestant = this.currentResponder;
+      const value = getClueValue(BOARD[GameState.activeTile.col].clues[GameState.activeTile.row]) || 0;
+      contestant.score += value;
+      this.currentResponder = null;
+      updateContestantDisplay();
+      updateHostControls();
+      this.disable();
+      setIndicator(`${contestant.name} is correct! Reveal when ready.`, 'success');
+      if(IS_HOST) {
+        broadcastScores();
+        GameState.save();
+      }
+    },
+    
+    handleIncorrect() {
+      if(!this.currentResponder || !GameState.activeTile) return;
+      const contestant = this.currentResponder;
+      const value = getClueValue(BOARD[GameState.activeTile.col].clues[GameState.activeTile.row]) || 0;
+      contestant.score -= value;
+      this.currentResponder = null;
+      updateContestantDisplay();
+      updateHostControls();
+      this.enable({ message: 'Buzzers reopened' });
+      setIndicator(`${contestant.name} is incorrect. Buzzers reopened.`, 'warn');
+      if(IS_HOST) {
+        broadcastScores();
+        GameState.save();
+      }
+    },
+    
+    handleClear() {
+      if(!this.currentResponder || !GameState.activeTile) return;
+      const name = this.currentResponder.name;
+      this.currentResponder = null;
+      updateContestantDisplay();
+      updateHostControls();
+      this.enable({ message: 'Buzzers reopened' });
+      setIndicator(`Buzz cleared for ${name}. Awaiting buzz.`, 'info');
+    }
+  };
+
+  // =============================================================================
+  // NETWORK MANAGER MODULE
+  // =============================================================================
+  
+  const NetworkManager = {
+    socket: null,
+    isOpen: false,
+    queue: [],
+    hostRegistered: false,
+    retryCount: 0,
+    maxRetries: 5,
+    retryTimeout: null,
+    
+    connect() {
+      if(typeof WebSocket === 'undefined'){
+        setNetworkStatus('WebSocket not supported in this browser.');
+        if(IS_HOST) setHostStatus('WebSocket unavailable.');
+        return;
+      }
+      if(this.socket) return;
+      
+      setNetworkStatus('Connecting to buzzer server…');
+      if(IS_HOST) setHostStatus('Connecting to buzzer server…');
+      
+      try{
+        this.socket = new WebSocket(WS_URL);
+        this.setupHandlers();
+      }catch(err){
+        console.error('Failed to connect to realtime server', err);
+        setNetworkStatus('Unable to connect to buzzer server.');
+        if(IS_HOST) setHostStatus('Unable to connect. Check the server.');
+        this.scheduleReconnect();
+      }
+    },
+    
+    setupHandlers() {
+      this.socket.addEventListener('open', ()=>{
+        this.isOpen = true;
+        this.retryCount = 0;
+        if(IS_HOST){
+          this.hostRegistered = false;
+          setHostStatus('Connected. Registering room…');
+          setNetworkStatus('Connected to buzzer server.');
+          this.send({ action: 'register-host', roomCode: ROOM_CODE }, { requireHostReady: false });
+        } else {
+          setNetworkStatus('Connected. Enter the room code from the host.');
+        }
+        this.flush();
+      });
+
+      this.socket.addEventListener('message', (event)=>{
+        let data = null;
+        try{
+          data = JSON.parse(event.data);
+        }catch(e){
+          console.warn('Failed to parse message', e);
+          return;
+        }
+        this.handleMessage(data);
+      });
+
+      this.socket.addEventListener('close', ()=>{
+        this.isOpen = false;
+        if(IS_HOST){
+          this.hostRegistered = false;
+          clearJoinRequests();
+        }
+        setNetworkStatus('Disconnected from buzzer server. Retrying…');
+        if(IS_HOST) setHostStatus('Disconnected. Attempting to reconnect…');
+        if(!IS_HOST){
+          contestantJoined = false;
+          contestantClientId = null;
+          contestantSlotId = null;
+          if(contestantBuzzBtn) contestantBuzzBtn.disabled = true;
+          if(contestantClient){
+            contestantClient.classList.remove('active');
+            contestantClient.setAttribute('hidden','');
+          }
+          if(contestantJoin) contestantJoin.removeAttribute('hidden');
+          setJoinFeedback('Lost connection to buzzer server. Trying again…');
+        }
+        this.socket = null;
+        this.scheduleReconnect();
+      });
+
+      this.socket.addEventListener('error', (err)=>{
+        console.error('WebSocket error:', err);
+        setNetworkStatus('Buzzer server connection error.');
+        if(IS_HOST) setHostStatus('Connection error.');
+      });
+    },
+    
+    scheduleReconnect() {
+      if(this.retryTimeout) return;
+      if(this.retryCount >= this.maxRetries){
+        setNetworkStatus('Unable to connect after multiple attempts.');
+        if(IS_HOST) setHostStatus('Connection failed. Please refresh the page.');
+        return;
+      }
+      
+      const delay = Math.min(1000 * Math.pow(2, this.retryCount), 30000);
+      this.retryCount++;
+      
+      this.retryTimeout = setTimeout(()=>{
+        this.retryTimeout = null;
+        if(!this.socket){
+          this.connect();
+        }
+      }, delay);
+    },
+    
+    send(message, options = {}) {
+      if(!message || typeof message !== 'object') return;
+      const requireHostReady = !(options && options.requireHostReady === false);
+      const payload = Object.assign({}, message);
+      if(!payload.roomCode && ROOM_CODE){
+        payload.roomCode = ROOM_CODE;
+      }
+      
+      if(!this.socket || this.socket.readyState !== WebSocket.OPEN || (IS_HOST && requireHostReady && !this.hostRegistered)){
+        this.queue.push({ message: payload, options: { requireHostReady } });
+        return;
+      }
+      
+      try{
+        this.socket.send(JSON.stringify(payload));
+      }catch(err){
+        console.warn('Realtime send failed', err);
+        this.queue.push({ message: payload, options: { requireHostReady } });
+      }
+    },
+    
+    flush() {
+      if(!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
+      let i = 0;
+      while(i < this.queue.length){
+        const item = this.queue[i];
+        const requireHostReady = !(item.options && item.options.requireHostReady === false);
+        if(IS_HOST && requireHostReady && !this.hostRegistered){
+          i += 1;
+          continue;
+        }
+        const payload = Object.assign({}, item.message);
+        if(!payload.roomCode && ROOM_CODE){
+          payload.roomCode = ROOM_CODE;
+        }
+        try{
+          this.socket.send(JSON.stringify(payload));
+        }catch(err){
+          console.warn('Failed to send queued message', err);
+          break;
+        }
+        this.queue.splice(i,1);
+      }
+    },
+    
+    sendBuzzersState(state) {
+      if(!IS_HOST) return;
+      const payload = {
+        open: !!(state && state.open),
+        message: state && state.message ? state.message : '',
+      };
+      this.send({ action: 'buzzers-state', payload }, { requireHostReady: true });
+    },
+    
+    handleMessage(message) {
+      if(!message || typeof message !== 'object') return;
+      
+      // Validate message type
+      const allowedTypes = new Set([
+        'host-registered', 'contestant-joined', 'contestant-requested', 'contestant-request-removed',
+        'contestant-request-error', 'contestant-left', 'contestant-buzz', 'sync', 'buzzers-state',
+        'buzz-result', 'join-accepted', 'join-pending', 'join-denied', 'room-closed'
+      ]);
+      
+      if(!allowedTypes.has(message.type)){
+        console.warn('Unknown message type:', message.type);
+        return;
+      }
+      
+      const type = message.type;
+      switch(type){
+        case 'host-registered':
+          if(IS_HOST){
+            if(message.roomCode){
+              ROOM_CODE = sanitizeRoomCode(message.roomCode) || ROOM_CODE;
+            }
+            this.hostRegistered = true;
+            clearJoinRequests();
+            updateHostShareLink();
+            setHostStatus('Host connected. Share the link below.');
+            setNetworkStatus('Connected to buzzer server.');
+            this.flush();
+            broadcastContestants();
+            broadcastScores();
+            showToast('Room created successfully', 'success');
+          }
+          break;
+        case 'contestant-joined':
+          if(IS_HOST) assignContestantSlot(message.slotId, message);
+          break;
+        case 'contestant-requested':
+          handleJoinRequestAdded(message);
+          break;
+        case 'contestant-request-removed':
+          handleJoinRequestRemoved(message);
+          break;
+        case 'contestant-request-error':
+          handleJoinRequestError(message);
+          break;
+        case 'contestant-left':
+          if(IS_HOST){
+            releaseContestantSlot(message.slotId);
+          } else if(contestantSlotId && message.slotId === contestantSlotId){
+            contestantJoined = false;
+            contestantClientId = null;
+            contestantSlotId = null;
+            if(contestantClient) contestantClient.classList.remove('active');
+            if(contestantBuzzBtn) contestantBuzzBtn.disabled = true;
+            if(contestantJoin) contestantJoin.removeAttribute('hidden');
+            setContestantStatus('Disconnected from the game. Rejoin with the room code.');
+          }
+          break;
+        case 'contestant-buzz':
+          handleIncomingBuzz(message);
+          break;
+        case 'sync':
+          if(!IS_HOST && message.payload) handleSyncMessage(message.payload);
+          break;
+        case 'buzzers-state':
+          applyRemoteBuzzersState(message.payload || message);
+          break;
+        case 'buzz-result':
+          handleBuzzResultMessage(message.payload || message);
+          break;
+        case 'join-accepted':
+          if(joinGameBtn) joinGameBtn.disabled = false;
+          handleJoinAccepted(message);
+          break;
+        case 'join-pending':
+          handleJoinPending(message);
+          break;
+        case 'join-denied':
+          if(joinGameBtn) joinGameBtn.disabled = false;
+          handleJoinDenied(message);
+          break;
+        case 'room-closed':
+          if(!IS_HOST){
+            contestantJoined = false;
+            contestantClientId = null;
+            contestantSlotId = null;
+            if(contestantBuzzBtn) contestantBuzzBtn.disabled = true;
+            if(contestantClient){
+              contestantClient.classList.remove('active');
+              contestantClient.setAttribute('hidden','');
+            }
+            if(contestantJoin) contestantJoin.removeAttribute('hidden');
+            setContestantStatus('Host disconnected. Wait for the host to restart the game.');
+            setJoinFeedback('Host disconnected. Try joining again soon.');
+          }
+          break;
+      }
+    }
+  };
+
+  // =============================================================================
+  // INITIALIZATION & SETUP
+  // =============================================================================
+  
+  const params = new URLSearchParams(window.location.search);
+  const roleParam = params.get('role');
+  const IS_HOST = roleParam ? roleParam.toLowerCase()==='host' : true;
+  window.IS_HOST = IS_HOST;
+
+  const wsParam = params.get('ws');
+  const wsPortParam = params.get('wsport') || '3001';
+  const fallbackHost = (location.hostname && location.hostname.length) ? location.hostname : 'localhost';
+  const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
+  const WS_URL = wsParam ? wsParam : `${wsProtocol}://${fallbackHost}:${wsPortParam}`;
+
+  let ROOM_CODE = sanitizeRoomCode(params.get('room'));
+  if(IS_HOST && !ROOM_CODE){
+    ROOM_CODE = generateRoomCode();
+  }
+
+  let contestantClientId = null;
+  let contestantSlotId = null;
+  let contestantAssignedKey = null;
+  let contestantJoined = false;
+  let contestantPendingRequestId = null;
+  let connectionStatusMessage = '';
+  let connectionSummaryMessage = '';
+  let remoteBuzzersOpen = false;
+
+  const CLIENT_ID = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const CHANNEL_NAME = 'esg-jeopardy-sync';
+  const STORAGE_KEY = `__${CHANNEL_NAME}`;
+  const broadcastChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel(CHANNEL_NAME) : null;
+
+  // =============================================================================
+  // DOM REFERENCES
+  // =============================================================================
+  
+  const boardEl = document.getElementById('board');
+  const remainingText = document.getElementById('remainingText');
+  const resetBtn = document.getElementById('resetBtn');
+  const finalBtn = document.getElementById('finalBtn');
+  const audio = document.getElementById('final-audio');
+  const modal = document.getElementById('modal');
+  const finalToggle = document.getElementById('finalToggle');
+  const finalContent = document.getElementById('finalContent');
+  const revealBtn = document.getElementById('revealBtn');
+  const closeBtn = document.getElementById('closeBtn');
+  const scoreboardList = document.getElementById('scoreboardList');
+  const joinRequestsPanel = document.getElementById('joinRequestsPanel');
+  const joinRequestsList = document.getElementById('joinRequestsList');
+  const networkStatusEl = document.getElementById('networkStatus');
+  const buzzerControls = document.getElementById('buzzerControls');
+  const buzzerStatus = document.getElementById('buzzerStatus');
+  const buzzerIndicator = document.getElementById('buzzerIndicator');
+  const hostControls = document.getElementById('hostControls');
+  const markCorrectBtn = document.getElementById('markCorrect');
+  const markIncorrectBtn = document.getElementById('markIncorrect');
+  const clearBuzzBtn = document.getElementById('clearBuzz');
+  const revealTileBtn = document.getElementById('revealTile');
+  const doublePanel = document.getElementById('doublePanel');
+  const doubleInput = document.getElementById('doubleInput');
+  const doubleConfirmBtn = document.getElementById('doubleConfirm');
+  const doubleDefaultBtn = document.getElementById('doubleDefault');
+  const hostRoomInfo = document.getElementById('hostRoomInfo');
+  const roomCodeDisplay = document.getElementById('roomCodeDisplay');
+  const shareLinkInput = document.getElementById('shareLink');
+  const hostRealtimeStatus = document.getElementById('hostRealtimeStatus');
+  const contestantJoin = document.getElementById('contestantJoin');
+  const joinCodeInput = document.getElementById('joinCodeInput');
+  const contestantNameInput = document.getElementById('contestantNameInput');
+  const joinGameBtn = document.getElementById('joinGameBtn');
+  const joinStatus = document.getElementById('joinStatus');
+  const contestantClient = document.getElementById('contestantClient');
+  const activeContestantName = document.getElementById('activeContestantName');
+  const contestantBuzzBtn = document.getElementById('contestantBuzzBtn');
+  const contestantClientStatus = document.getElementById('contestantClientStatus');
+
+  const contestantEls = new Map();
+  const scoreEls = new Map();
+  const nameLabelEls = new Map();
+  const tagEls = new Map();
+  const buzzerBtnEls = new Map();
+  const keyToContestant = new Map();
+  const pendingJoinRequests = new Map();
+
+  // =============================================================================
+  // ROLE SETUP
+  // =============================================================================
+  
+  document.body.classList.remove('role-host','role-contestant');
+  document.body.classList.add(IS_HOST ? 'role-host' : 'role-contestant');
+  document.querySelectorAll('[data-role="host-only"]').forEach(el=>{
+    if(IS_HOST){
+      el.removeAttribute('hidden');
+    } else {
+      el.setAttribute('hidden','');
+    }
+  });
+  document.querySelectorAll('[data-role="contestant-only"]').forEach(el=>{
+    if(IS_HOST){
+      el.setAttribute('hidden','');
+    } else {
+      el.removeAttribute('hidden');
+    }
+  });
+
+  if(IS_HOST){
+    updateHostShareLink();
+  } else if(joinCodeInput && ROOM_CODE){
+    joinCodeInput.value = ROOM_CODE;
+  }
+
+  if(shareLinkInput){
+    shareLinkInput.addEventListener('focus', ()=>{ try{ shareLinkInput.select(); }catch(_){} });
+    shareLinkInput.addEventListener('click', ()=>{ try{ shareLinkInput.select(); }catch(_){} });
+  }
+
+  // =============================================================================
+  // BROADCAST CHANNEL SETUP
+  // =============================================================================
+  
+  if(broadcastChannel){
+    broadcastChannel.onmessage = (event)=>{
+      const data = event && event.data;
+      if(!data || data.senderId === CLIENT_ID) return;
+      handleSyncMessage(data);
+    };
+  } else {
+    window.addEventListener('storage', (event)=>{
+      if(event.key !== STORAGE_KEY || !event.newValue) return;
+      try{
+        const data = JSON.parse(event.newValue);
+        if(!data || data.senderId === CLIENT_ID) return;
+        handleSyncMessage(data);
+      }catch(e){
+        console.warn('Failed to parse sync message', e);
+      }
+    });
+  }
+
+  // =============================================================================
+  // HELPER FUNCTIONS
+  // =============================================================================
+  
+  function getClueValue(clue){
+    if(!clue) return 0;
+    const wager = typeof clue.wager === 'number' && !Number.isNaN(clue.wager) ? clue.wager : null;
+    return wager!==null ? wager : clue.value;
+  }
+
+  const nextState = (s)=> s==="hidden"?"clue":(s==="clue"?"response":(s==="response"?"done":"done"));
+  
+  function tileBtn(colIdx,rowIdx){
+    return document.getElementById(`tile-${colIdx}-${rowIdx}`);
+  }
+
+  function broadcast(type,payload,options={}){
+    if(!IS_HOST) return;
+    const message = { senderId: CLIENT_ID, type, payload, ts: Date.now() };
+    if(options.local !== false){
+      if(broadcastChannel){
+        try{ broadcastChannel.postMessage(message); }catch(e){ console.warn('Broadcast channel failed', e); }
+      } else {
+        try{
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(message));
+          localStorage.removeItem(STORAGE_KEY);
+        }catch(e){
+          console.warn('LocalStorage broadcast failed', e);
+        }
+      }
+    }
+    if(options.remote !== false){
+      NetworkManager.send({ action: 'broadcast', payload: message });
+    }
+  }
+
+  const debouncedBroadcast = debounce(broadcast, 100);
+
+  function broadcastScores(){
+    if(!IS_HOST) return;
+    broadcast('scores',{contestants: CONTESTANTS.map(({id,score})=>({id,score}))});
+  }
+
+  function broadcastContestants(){
+    if(!IS_HOST) return;
+    broadcast('contestants',{list: CONTESTANTS.map(c=>({ id: c.id, name: c.name, connected: !!c.connected }))});
+  }
+
+  function setIndicator(message,tone='info',options={}){
+    if(!message){
+      buzzerIndicator.textContent = '';
+      buzzerIndicator.removeAttribute('data-tone');
+      buzzerIndicator.style.display = 'none';
+      if(IS_HOST && options.broadcast !== false){
+        broadcast('indicator',{message:'',tone});
+      }
+      return;
+    }
+    buzzerIndicator.textContent = message;
+    buzzerIndicator.dataset.tone = tone;
+    buzzerIndicator.style.display = 'block';
+    if(IS_HOST && options.broadcast !== false){
+      broadcast('indicator',{message,tone});
+    }
+  }
+
+  function renderNetworkStatus(){
+    if(!networkStatusEl) return;
+    const segments = [];
+    if(connectionStatusMessage) segments.push(connectionStatusMessage);
+    if(connectionSummaryMessage) segments.push(connectionSummaryMessage);
+    networkStatusEl.textContent = segments.join(' — ');
+  }
+
+  function setNetworkStatus(text){
+    connectionStatusMessage = text || '';
+    renderNetworkStatus();
+  }
+
+  function setHostStatus(text){
+    if(hostRealtimeStatus) hostRealtimeStatus.textContent = text || '';
+  }
+
+  function setJoinFeedback(text){
+    if(joinStatus) joinStatus.textContent = text || '';
+  }
+
+  function setContestantStatus(text){
+    if(contestantClientStatus) contestantClientStatus.textContent = text || '';
+  }
+
+  function updateNetworkSummary(){
+    const connected = CONTESTANTS.filter(c=>c.connected).length;
+    connectionSummaryMessage = connected === 0 ? 'No contestants connected yet' : `${connected}/3 contestants connected`;
+    renderNetworkStatus();
+  }
+
+  function updateHostShareLink(){
+    if(!IS_HOST) return;
+    if(roomCodeDisplay) roomCodeDisplay.textContent = ROOM_CODE && ROOM_CODE.length ? ROOM_CODE : '----';
+    if(shareLinkInput){
+      try{
+        const baseHref = window.location.href.split('#')[0];
+        const shareUrl = new URL(baseHref, window.location.origin || 'http://localhost');
+        shareUrl.search = '';
+        shareUrl.hash = '';
+        shareUrl.searchParams.set('role','contestant');
+        if(wsParam) shareUrl.searchParams.set('ws', wsParam);
+        const wsPortQuery = params.get('wsport');
+        if(wsPortQuery) shareUrl.searchParams.set('wsport', wsPortQuery);
+        shareLinkInput.value = shareUrl.toString();
+      }catch(e){
+        shareLinkInput.value = '';
+      }
+    }
+  }
+
+  function updateHostControls(){
+    const hasResponder = !!BuzzerController.currentResponder;
+    [markCorrectBtn,markIncorrectBtn,clearBuzzBtn].forEach(btn=>{ if(btn) btn.disabled = !hasResponder; });
+    if(hostControls) hostControls.classList.toggle('active', hasResponder);
+    if(revealTileBtn){
+      const canReveal = !!GameState.activeTile && GameState.states[GameState.activeTile.col][GameState.activeTile.row]==='clue';
+      revealTileBtn.disabled = !canReveal;
+    }
+  }
+
+  function updateContestantDisplay(){
+    if('requestIdleCallback' in window){
+      requestIdleCallback(performUpdate);
+    } else {
+      performUpdate();
+    }
+    
+    function performUpdate(){
+      CONTESTANTS.forEach(contestant=>{
+        const row = contestantEls.get(contestant.id);
+        const scoreEl = scoreEls.get(contestant.id);
+        const nameLabel = nameLabelEls.get(contestant.id);
+        const tag = tagEls.get(contestant.id);
+        const buzzerBtn = buzzerBtnEls.get(contestant.id);
+        if(scoreEl) scoreEl.textContent = formatScore(contestant.score);
+        if(nameLabel) nameLabel.textContent = contestant.name;
+        if(tag) tag.textContent = contestant.connected ? 'Connected' : 'Open slot';
+        if(row){
+          row.classList.toggle('active', !!BuzzerController.currentResponder && BuzzerController.currentResponder.id===contestant.id);
+          row.classList.toggle('connected', !!contestant.connected);
+        }
+        if(buzzerBtn){
+          buzzerBtn.textContent = `${contestant.name} (${contestant.key})`;
+          buzzerBtn.setAttribute('aria-label', `Buzz for ${contestant.name} (key ${contestant.key})`);
+        }
+      });
+      updateNetworkSummary();
+    }
+  }
+
+  function updateRemaining(){
+    const remaining = GameState.states.flat().filter(s=>s!=="done").length;
+    if(remainingText) remainingText.textContent = `Remaining tiles: ${remaining}`;
+  }
+
+  // =============================================================================
+  // CONTESTANT MANAGEMENT
+  // =============================================================================
+  
+  function assignContestantSlot(slotId, info){
+    const contestant = CONTESTANTS.find(c=>c.id===slotId);
+    if(!contestant) return;
+    contestant.name = info && info.name ? info.name : contestant.defaultName;
+    contestant.remoteId = info && info.clientId ? info.clientId : null;
+    contestant.connected = !!contestant.remoteId;
+    updateContestantDisplay();
+    broadcastContestants();
+    broadcastScores();
+    if(IS_HOST){
+      const slotNumber = slotId.split('-')[1] || '';
+      setHostStatus(`${contestant.name} joined slot ${slotNumber}.`);
+      showToast(`${contestant.name} joined the game`, 'success');
+    }
+  }
+
+  function releaseContestantSlot(slotId){
+    const contestant = CONTESTANTS.find(c=>c.id===slotId);
+    if(!contestant) return;
+    const previousName = contestant.name;
+    contestant.name = contestant.defaultName;
+    contestant.remoteId = null;
+    contestant.connected = false;
+    updateContestantDisplay();
+    broadcastContestants();
+    broadcastScores();
+    if(IS_HOST){
+      const slotNumber = slotId.split('-')[1] || '';
+      setHostStatus(`Slot ${slotNumber || slotId} is now open.`);
+      showToast(`${previousName} left the game`, 'info');
+    }
+  }
+
+  function applyScores(data){
+    if(!Array.isArray(data)) return;
+    data.forEach(item=>{
+      if(!item) return;
+      const contestant = CONTESTANTS.find(c=>c.id===item.id);
+      if(contestant && typeof item.score === 'number'){
+        contestant.score = item.score;
+      }
+    });
+    updateContestantDisplay();
+  }
+
+  function applyContestantRoster(list){
+    if(!Array.isArray(list)) return;
+    list.forEach(item=>{
+      if(!item) return;
+      const contestant = CONTESTANTS.find(c=>c.id===item.id);
+      if(contestant){
+        if(item.name) contestant.name = item.name;
+        contestant.connected = !!item.connected;
+      }
+    });
+    updateContestantDisplay();
+  }
+
+  // =============================================================================
+  // JOIN REQUEST MANAGEMENT
+  // =============================================================================
+  
+  function clearJoinRequests(){
+    pendingJoinRequests.clear();
+    if(joinRequestsPanel) joinRequestsPanel.setAttribute('hidden','');
+    if(joinRequestsList) joinRequestsList.innerHTML = '';
+  }
+
+  function respondToJoinRequest(requestId, decision){
+    if(!IS_HOST || !requestId) return;
+    const entry = pendingJoinRequests.get(requestId);
+    if(entry){
+      entry.working = true;
+      pendingJoinRequests.set(requestId, entry);
+    }
+    renderJoinRequests();
+    const action = decision === 'approve' ? 'approve-contestant' : 'deny-contestant';
+    NetworkManager.send({ action, payload: { requestId } }, { requireHostReady: true });
+  }
+
+  function renderJoinRequests(){
+    if(!IS_HOST || !joinRequestsPanel || !joinRequestsList) return;
+    const entries = Array.from(pendingJoinRequests.values()).sort((a,b)=>(a.requestedAt||0)-(b.requestedAt||0));
+    joinRequestsList.innerHTML = '';
+    if(entries.length === 0){
+      joinRequestsPanel.setAttribute('hidden','');
+      return;
+    }
+    joinRequestsPanel.removeAttribute('hidden');
+    entries.forEach(entry=>{
+      if(!entry || !entry.requestId) return;
+      const item = document.createElement('div');
+      item.className = 'join-request-item';
+
+      const info = document.createElement('div');
+      info.className = 'join-request-info';
+      const nameEl = document.createElement('span');
+      nameEl.className = 'join-request-name';
+      nameEl.textContent = entry.name || 'Contestant';
+      info.appendChild(nameEl);
+      const meta = document.createElement('span');
+      meta.className = 'join-request-meta';
+      meta.textContent = 'Waiting for host approval';
+      info.appendChild(meta);
+      item.appendChild(info);
+
+      const actions = document.createElement('div');
+      actions.className = 'join-request-actions';
+      const acceptBtn = document.createElement('button');
+      acceptBtn.type = 'button';
+      acceptBtn.className = 'btn btn-primary btn-small';
+      acceptBtn.textContent = 'Accept';
+      acceptBtn.disabled = !!entry.working;
+      acceptBtn.addEventListener('click', ()=>respondToJoinRequest(entry.requestId, 'approve'));
+      actions.appendChild(acceptBtn);
+
+      const denyBtn = document.createElement('button');
+      denyBtn.type = 'button';
+      denyBtn.className = 'btn btn-alt btn-small';
+      denyBtn.textContent = 'Decline';
+      denyBtn.disabled = !!entry.working;
+      denyBtn.addEventListener('click', ()=>respondToJoinRequest(entry.requestId, 'deny'));
+      actions.appendChild(denyBtn);
+
+      item.appendChild(actions);
+      joinRequestsList.appendChild(item);
+    });
+  }
+
+  function handleJoinRequestAdded(data){
+    if(!IS_HOST || !data || !data.requestId) return;
+    pendingJoinRequests.set(data.requestId, {
+      requestId: data.requestId,
+      name: data.name || 'Contestant',
+      requestedAt: data.requestedAt || Date.now(),
+      working: false,
+    });
+    renderJoinRequests();
+    setHostStatus(`${data.name || 'Contestant'} requested to join.`);
+    showToast(`${data.name || 'Contestant'} wants to join`, 'info');
+  }
+
+  function handleJoinRequestRemoved(data){
+    if(!IS_HOST || !data || !data.requestId) return;
+    const entry = pendingJoinRequests.get(data.requestId);
+    pendingJoinRequests.delete(data.requestId);
+    renderJoinRequests();
+    if(!entry) return;
+    let message = '';
+    const name = entry.name || 'Contestant';
+    switch(data.reason){
+      case 'approved':
+        message = `Approved ${name}.`;
+        break;
+      case 'denied':
+        message = `Declined ${name}.`;
+        break;
+      case 'left':
+        message = `${name} left the queue.`;
+        break;
+      case 'full':
+        message = `No slots available for ${name}.`;
+        break;
+      default:
+        message = `${name}'s request cleared.`;
+        break;
+    }
+    if(message) setHostStatus(message);
+  }
+
+  function handleJoinRequestError(data){
+    if(!IS_HOST || !data || !data.requestId) return;
+    const entry = pendingJoinRequests.get(data.requestId);
+    if(entry){
+      entry.working = false;
+      pendingJoinRequests.set(data.requestId, entry);
+      renderJoinRequests();
+    }
+    if(data.message) setHostStatus(data.message);
+  }
+
+  // =============================================================================
+  // CONTESTANT CLIENT FUNCTIONS
+  // =============================================================================
+  
+  function applyRemoteBuzzersState(state){
+    if(IS_HOST || !state) return;
+    remoteBuzzersOpen = !!state.open;
+    if(contestantBuzzBtn){
+      contestantBuzzBtn.disabled = !contestantJoined || !remoteBuzzersOpen;
+    }
+    const message = state.message || (remoteBuzzersOpen ? 'Buzzers open. Tap to buzz in!' : 'Buzzers locked.');
+    setContestantStatus(message);
+  }
+
+  function handleBuzzResultMessage(data){
+    if(IS_HOST || !data) return;
+    if(contestantSlotId && data.contestantId === contestantSlotId){
+      setContestantStatus('You buzzed in! Waiting for the host.');
+      if(contestantBuzzBtn) contestantBuzzBtn.disabled = true;
+    } else if(data.name){
+      setContestantStatus(`${data.name} buzzed in first.`);
+    }
+  }
+
+  function handleJoinAccepted(data){
+    contestantJoined = true;
+    contestantClientId = data && data.clientId ? data.clientId : null;
+    contestantSlotId = data && data.slotId ? data.slotId : null;
+    contestantAssignedKey = data && data.key ? data.key : null;
+    contestantPendingRequestId = null;
+    if(activeContestantName){
+      activeContestantName.textContent = data && data.name ? data.name : 'Contestant';
+    }
+    if(contestantClient){
+      contestantClient.classList.add('active');
+      contestantClient.removeAttribute('hidden');
+    }
+    if(contestantJoin){
+      contestantJoin.setAttribute('hidden','');
+    }
+    if(contestantBuzzBtn){
+      contestantBuzzBtn.disabled = !remoteBuzzersOpen;
+    }
+    setJoinFeedback('');
+    const slotNumber = contestantSlotId ? contestantSlotId.split('-')[1] : '';
+    const slotLabel = slotNumber ? `Contestant ${slotNumber}` : 'Contestant';
+    setContestantStatus(`Joined as ${slotLabel}. Wait for the host to open buzzers.`);
+    showToast('Successfully joined the game!', 'success');
+  }
+
+  function handleJoinDenied(data){
+    contestantJoined = false;
+    contestantClientId = null;
+    contestantSlotId = null;
+    contestantPendingRequestId = null;
+    const message = data && data.message ? data.message : 'Unable to join. Try again.';
+    setJoinFeedback(message);
+    setContestantStatus(message);
+    showToast(message, 'error');
+  }
+
+  function handleJoinPending(data){
+    contestantPendingRequestId = data && data.requestId ? data.requestId : null;
+    setJoinFeedback('Waiting for the host to approve…');
+    setContestantStatus('Waiting for the host to approve your request.');
+  }
+
+  function handleIncomingBuzz(data){
+    if(!IS_HOST || !data) return;
+    const contestant = CONTESTANTS.find(c=>c.id===data.slotId && c.remoteId===data.clientId);
+    if(!contestant) return;
+    BuzzerController.handleBuzz(contestant);
+  }
+
+  function attemptContestantJoin(){
+    if(IS_HOST) return;
+    const code = sanitizeRoomCode(joinCodeInput ? joinCodeInput.value : ROOM_CODE);
+    if(!code || code.length !== 4){
+      setJoinFeedback('Enter the 4-digit room code.');
+      return;
+    }
+    const name = sanitizeName(contestantNameInput ? contestantNameInput.value : '');
+    if(!name){
+      setJoinFeedback('Enter your name to join.');
+      if(contestantNameInput){
+        try{ contestantNameInput.focus(); }catch(_){}
+      }
+      return;
+    }
+    ROOM_CODE = code;
+    if(joinCodeInput) joinCodeInput.value = code;
+    if(joinGameBtn) joinGameBtn.disabled = true;
+    setJoinFeedback('Requesting to join…');
+    NetworkManager.send({ action: 'join-contestant', roomCode: code, payload: { name } }, { requireHostReady: false });
+  }
+
+  function emitContestantBuzz(){
+    if(IS_HOST) return;
+    if(!contestantJoined || !contestantSlotId || !contestantClientId || !remoteBuzzersOpen) return;
+    NetworkManager.send({
+      action: 'contestant-buzz',
+      roomCode: ROOM_CODE,
+      payload: {
+        slotId: contestantSlotId,
+        clientId: contestantClientId,
+        name: activeContestantName ? activeContestantName.textContent : undefined,
+      }
+    }, { requireHostReady: false });
+    if(contestantBuzzBtn) contestantBuzzBtn.disabled = true;
+    setContestantStatus('Buzz sent! Waiting for the host.');
+  }
+
+  // =============================================================================
+  // BOARD MANAGEMENT
+  // =============================================================================
+  
+  function setTileState(colIdx,rowIdx,state,options){
+    options = options || {};
+    GameState.states[colIdx][rowIdx] = state;
+    const btn = tileBtn(colIdx,rowIdx);
+    if(!btn) return;
+    const item = BOARD[colIdx].clues[rowIdx];
+    const content = btn.querySelector('.content');
+    if(!content) return;
+    
+    btn.classList.remove('hidden','clue','response','done');
+    btn.classList.add(state);
+
+    if(state==='hidden'){
+      content.textContent = item.value;
+      btn.querySelector('.value-tag').style.display = '';
+      btn.disabled = false;
+      btn.setAttribute('aria-label',`Reveal ${item.value} clue`);
+    } else if(state==='clue'){
+      content.textContent = item.clue;
+      const tag = btn.querySelector('.value-tag');
+      if(tag) tag.style.display = 'none';
+      btn.disabled = false;
+      btn.setAttribute('aria-label','Reveal correct response');
+    } else if(state==='response'){
+      content.textContent = item.response;
+      const tag = btn.querySelector('.value-tag');
+      if(tag) tag.style.display = 'none';
+      btn.disabled = false;
+      btn.setAttribute('aria-label','Played');
+    } else { // done
+      content.textContent = item.response;
+      const tag = btn.querySelector('.value-tag');
+      if(tag) tag.style.display = 'none';
+      btn.disabled = true;
+      btn.setAttribute('aria-label','Correct response revealed');
+    }
+
+    handleBuzzerStateForTile(colIdx,rowIdx,state,options);
+    if(IS_HOST) updateHostControls();
+    if(IS_HOST && options.broadcast !== false && !options.fromSync){
+      broadcast('setTileState',{colIdx,rowIdx,state});
+    }
+  }
+
+  function handleBuzzerStateForTile(colIdx,rowIdx,state,options={}){
+    if(state==='clue'){
+      GameState.activeTile = {col:colIdx,row:rowIdx};
+      BuzzerController.prepare(options);
+      return;
+    }
+
+    if(!GameState.activeTile || GameState.activeTile.col!==colIdx || GameState.activeTile.row!==rowIdx) return;
+
+    if(state==='hidden'){
+      BuzzerController.reset(options);
+    } else if(state==='response'){
+      BuzzerController.disable(options);
+      if(!BuzzerController.currentResponder) setIndicator('Clue resolved.', 'info', options);
+      BuzzerController.currentResponder = null;
+      updateContestantDisplay();
+      updateHostControls();
+    } else if(state==='done'){
+      GameState.activeTile = null;
+    }
+  }
+
+  function isDoubleAt(colIdx,rowIdx){
+    return GameState.doublePos && GameState.doublePos.col===colIdx && GameState.doublePos.row===rowIdx;
+  }
+
+  function isFlashingAt(colIdx,rowIdx){
+    return !!GameState.flashingPos && GameState.flashingPos.col===colIdx && GameState.flashingPos.row===rowIdx;
+  }
+
+  function setFlashing(colIdx,rowIdx,enable){
+    const btn = tileBtn(colIdx,rowIdx);
+    if(!btn) return;
+    if(enable){
+      const overlay = document.createElement('div');
+      overlay.className = 'flash';
+      overlay.innerHTML = '<div><div style="font-size:.75rem;letter-spacing:.25em">DAILY</div><div style="font-
